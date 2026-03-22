@@ -1,0 +1,37 @@
+{
+  "name": "clinicafacil---sistema-de-agendamento",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "NODE_OPTIONS=--max-old-space-size=4096 vite build",
+    "preview": "vite preview",
+    "sync": "powershell -ExecutionPolicy Bypass -File ./sync.ps1"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.48.1",
+    "date-fns": "^4.1.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.4",
+    "jspdf-autotable": "^5.0.2",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "react-router-dom": "^7.11.0",
+    "recharts": "^3.6.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^10.3.0",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.17",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

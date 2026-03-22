@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #F3F4F6;
+}
+
+.primary-bg {
+  background-color: #1E3A8A;
+}
+
+.primary-text {
+  color: #1E3A8A;
+}
+
+/* Custom Animations */
+@keyframes customFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
+.custom-fade-in {
+  animation: customFadeIn 0.4s ease-out forwards;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+}
+
+/* Custom Scrollbar Styles */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  /* slate-300 */
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.custom-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+  /* slate-400 */
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* Firefox */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+/* Sidebar Transition Helpers */
+.sidebar-transition {
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: width;
+}
+
+.sidebar-content-transition {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hide number input spin buttons */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
