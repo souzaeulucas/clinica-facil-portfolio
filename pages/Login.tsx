@@ -31,14 +31,14 @@ const Login: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-            <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
-                <div className="text-center mb-8">
-                    <div className="bg-blue-900 text-white w-12 h-12 rounded-lg flex items-center justify-center text-xl font-bold mx-auto mb-4">
+        <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center p-4">
+            <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/60 w-full max-w-md border border-slate-200/60 transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200/80">
+                <div className="text-center mb-10">
+                    <div className="bg-teal-500 text-white w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-black mx-auto mb-6 shadow-lg shadow-teal-500/20 animate-in zoom-in duration-500">
                         CF
                     </div>
-                    <h1 className="text-2xl font-bold text-gray-900">ClinicaFacil</h1>
-                    <p className="text-gray-500">Entre para acessar o sistema</p>
+                    <h1 className="text-3xl font-black text-slate-900 tracking-tight mb-2">ClinicaFacil</h1>
+                    <p className="text-slate-400 font-medium text-sm">Entre para acessar o sistema</p>
                 </div>
 
                 {error && (
@@ -54,7 +54,7 @@ const Login: React.FC = () => {
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent outline-none transition-all"
+                            className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all duration-200 font-bold text-slate-700 text-sm placeholder:text-slate-300"
                             placeholder="seu@email.com"
                             required
                         />
@@ -66,7 +66,7 @@ const Login: React.FC = () => {
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent outline-none transition-all"
+                            className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all duration-200 font-bold text-slate-700 text-sm placeholder:text-slate-300"
                             placeholder="••••••••"
                             required
                         />
@@ -75,9 +75,9 @@ const Login: React.FC = () => {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-blue-900 text-white py-2 rounded-lg font-bold hover:bg-blue-800 transition-colors disabled:opacity-50"
+                        className="w-full bg-teal-600 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest hover:bg-teal-500 transition-all duration-200 disabled:opacity-50 shadow-lg shadow-teal-600/20 active:scale-[0.98] mt-4"
                     >
-                        {loading ? 'Entrando...' : 'Entrar'}
+                        {loading ? 'Autenticando...' : 'Entrar no Sistema'}
                     </button>
                 </form>
 

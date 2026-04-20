@@ -336,7 +336,7 @@ const AttendanceManagement: React.FC = () => {
                         date: new Date(manualForm.date + 'T12:00:00').toISOString(),
                         type: 'Retorno',
                         status: 'absent',
-                        notes: manualForm.notes
+                        notes: `[SISTEMA] ${manualForm.notes}`
                     }]);
 
                 if (aError) throw aError;

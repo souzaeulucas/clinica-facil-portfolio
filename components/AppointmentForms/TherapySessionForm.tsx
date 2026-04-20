@@ -7,7 +7,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import ModernSelect from '../ui/ModernSelect';
 import { formatPatientName } from '../../utils/formatters';
 import { normalizeString } from '../../utils/string';
-import { parseISO, startOfDay } from 'date-fns';
+import { parseISO, startOfDay, format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 // Sub-components
 import PatientDetails from './TherapyForm/PatientDetails';
@@ -98,55 +99,84 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
 
     useEffect(() => {
         const fetchData = async () => {
-            // Handle pre-selected date from navigation
-            const state = location.state as { preSelectedDate?: string };
-            if (state?.preSelectedDate) {
-                setStartDate(state.preSelectedDate);
-            }
-
+            // Priority: Load options first
             const { data: specData } = await supabase.from('specialties').select('id, name').or('name.ilike.%psicolo%,name.ilike.%fisiotera%,name.ilike.%acupuntu%');
             if (specData) setSpecialties(specData);
             const { data: docData } = await supabase.from('doctors').select('id, name, specialty_id').order('name');
+            const allDoctors = docData || [];
             if (docData) setDoctors(docData);
 
-            // Load initial data if editing
+            // 1. Handle pre-selected date/doctor from navigation state (Fallback)
+            const state = location.state as { preSelectedDate?: string, selectedDoctorId?: string };
+            let effectiveDate = state?.preSelectedDate || '';
+            let effectiveDoctorId = state?.selectedDoctorId || '';
+
+            // 2. Handle initialData (Primary source)
             if (initialData) {
-                // If editing from an appointment slot, we have initialData as Appointment
-                // If editing a plan directly, it might be the plan itself.
-                const appointment = initialData;
                 const plan = initialData.treatment_plans || initialData;
-                const patient = appointment.patients || plan.patient || initialData.patient;
+                const patient = initialData.patients || plan.patient || initialData.patient;
 
-                if (plan && patient) {
-                    // Pre-fill patient info
-                    setSelectedPatient({
-                        id: plan.patient_id || patient.id,
-                        name: patient.name || '',
-                        cpf: patient.cpf || '',
-                        phone: patient.phone || '',
-                        is_sus: !!patient.is_sus
-                    });
-                    setPatientSearch(patient.name || '');
-                    setNewPatientCPF(patient.cpf || '');
-                    setNewPatientPhone(patient.phone || '');
+                // Case A: Editing existing plan or prefilled creation
+                if (plan.id || initialData.date || initialData.doctor_id) {
+                    if (initialData.date) effectiveDate = initialData.date;
+                    if (initialData.doctor_id) effectiveDoctorId = initialData.doctor_id;
 
-                    // Pre-fill plan info
-                    setSelectedSpecialtyId(plan.specialty_id || '');
-                    setSelectedDoctorId(plan.doctor_id || '');
-                    setStartDate(plan.start_date || new Date().toISOString().split('T')[0]);
-                    setTotalSessions(plan.total_sessions || 10);
-                    setSessionsPerWeek(plan.sessions_per_week || 1);
-                    setSelectedDays(plan.schedule_days || []);
-                    setScheduleTime(plan.schedule_time?.slice(0, 5) || '08:00');
-                    setIsPaying(plan.is_paying || false);
-                    setPricePerSession(plan.price_per_session || 0);
-                    setIsSus(!!patient.is_sus || !!plan.is_sus);
-                    setNotes(plan.notes || '');
-                    if (patient.birth_date) {
-                        setBirthDate(patient.birth_date);
+                    if (plan.id) {
+                        // Full edit mode
+                        if (patient) {
+                            setSelectedPatient({
+                                id: plan.patient_id || patient.id,
+                                name: patient.name || '',
+                                cpf: patient.cpf || '',
+                                phone: patient.phone || '',
+                                is_sus: !!patient.is_sus
+                            });
+                            setPatientSearch(patient.name || '');
+                            setNewPatientCPF(patient.cpf || '');
+                            setNewPatientPhone(patient.phone || '');
+                            if (patient.birth_date) setBirthDate(patient.birth_date);
+                        }
+
+                        setSelectedSpecialtyId(plan.specialty_id || '');
+                        setSelectedDoctorId(plan.doctor_id || '');
+                        setStartDate(plan.start_date || new Date().toISOString().split('T')[0]);
+                        setTotalSessions(plan.total_sessions || 10);
+                        setSessionsPerWeek(plan.sessions_per_week || 1);
+                        setSelectedDays(plan.schedule_days || []);
+                        setScheduleTime(plan.schedule_time?.slice(0, 5) || '08:00');
+                        setIsPaying(plan.is_paying || false);
+                        setPricePerSession(plan.price_per_session || 0);
+                        setIsSus(!!patient?.is_sus || !!plan.is_sus);
+                        setNotes(plan.notes || '');
+                        setIsFirstSessionEvaluation(initialData.type?.toLowerCase() === 'avaliação');
+                        
+                        // If we are editing, we don't want to override with state
+                        effectiveDate = '';
+                        effectiveDoctorId = '';
                     }
-                    // Normalize check for boolean/button sync
-                    setIsFirstSessionEvaluation(initialData.type?.toLowerCase() === 'avaliação');
+                }
+            }
+
+            // 3. Apply Contextual Prefilling (if not editing an existing plan)
+            if (effectiveDate) {
+                setStartDate(effectiveDate);
+                // Calculate weekday name
+                try {
+                    const dateObj = parseISO(effectiveDate);
+                    const dayName = format(dateObj, 'EEEE', { locale: ptBR });
+                    // Capitalize: "sexta-feira" -> "Sexta-feira"
+                    const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
+                    setSelectedDays([capitalizedDay]);
+                } catch (e) {
+                    console.error("Error parsing preSelectedDate:", e);
+                }
+            }
+
+            if (effectiveDoctorId) {
+                const doc = allDoctors.find(d => d.id === effectiveDoctorId);
+                if (doc) {
+                    setSelectedSpecialtyId(doc.specialty_id);
+                    setSelectedDoctorId(doc.id);
                 }
             }
         };

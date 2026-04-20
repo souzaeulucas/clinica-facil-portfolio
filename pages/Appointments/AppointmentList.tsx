@@ -593,9 +593,11 @@ const AppointmentList: React.FC = () => {
 
             // Construct prefilled data
             const prefilledData: any = {};
-            if (location.state.prefilledDoctor) {
-                prefilledData.doctor_id = location.state.prefilledDoctor;
-                prefilledData.doctors = { name: location.state.prefilledDoctorName }; // Mock join for display
+            if (location.state.prefilledDoctor || location.state.selectedDoctorId) {
+                prefilledData.doctor_id = location.state.prefilledDoctor || location.state.selectedDoctorId;
+                if (location.state.prefilledDoctorName) {
+                    prefilledData.doctors = { name: location.state.prefilledDoctorName }; // Mock join for display
+                }
             }
             if (location.state.prefilledSpecialty) {
                 // If needed, though doctor selection usually sets specialty
@@ -1206,14 +1208,27 @@ const AppointmentItem = React.memo<{
                     </div>
 
                     {apt.notes && (() => {
+                        const hasSeparator = apt.notes.includes('\n\nObservação: ');
                         const parts = apt.notes.split('\n\nObservação: ');
-                        const systemNotes = parts[0];
-                        const userNotes = parts[1];
+                        
+                        let systemNotes = hasSeparator ? parts[0] : '';
+                        let userNotes = hasSeparator ? parts[1] : parts[0];
+
+                        // Se não houver separador, verificamos se a nota parece ser apenas do sistema
+                        if (!hasSeparator && (
+                            apt.notes.startsWith('Consulta base realizada em:') || 
+                            apt.notes.startsWith('[Encaminhamento Automático:') ||
+                            apt.notes.includes('[SISTEMA]') || 
+                            apt.notes.includes('Falta registrada manualmente')
+                        )) {
+                            systemNotes = apt.notes;
+                            userNotes = '';
+                        }
 
                         return (
                             <div className="mt-4 space-y-2">
                                 {userNotes && (
-                                    <div className="bg-amber-50 border-l-4 border-l-amber-500 p-3 rounded-r-xl shadow-sm animate-in fade-in slide-in-from-left-2 duration-300">
+                                    <div className="bg-amber-100 border-l-4 border-l-amber-500 p-3 rounded-r-xl shadow-sm animate-in fade-in slide-in-from-left-2 duration-300">
                                         <div className="flex items-center gap-2 mb-1">
                                             <Info size={14} className="text-amber-600" />
                                             <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Observação</span>
@@ -1223,14 +1238,24 @@ const AppointmentItem = React.memo<{
                                         </p>
                                     </div>
                                 )}
-                                {systemNotes && (
-                                    <div className={`p-3 rounded-xl flex items-start gap-3 leading-relaxed ${userNotes ? 'text-[10px] text-slate-400 font-medium' : 'text-[11px] text-slate-500 bg-slate-50 border border-slate-100 italic shadow-inner'}`}>
-                                        {!userNotes && <Info size={14} className="text-teal-500 shrink-0 mt-0.5" />}
-                                        <span className="whitespace-pre-wrap">
-                                            {userNotes ? systemNotes.replace('Consulta base realizada em:', '📅 Base em:').replace('Período de retorno:', '⏳ Retorno:') : systemNotes}
-                                        </span>
-                                    </div>
-                                )}
+                                {systemNotes && (() => {
+                                    const isSystemAlert = systemNotes.includes('[SISTEMA]') || systemNotes.includes('Falta registrada manualmente');
+                                    return (
+                                        <div className={`p-3 rounded-xl flex items-start gap-3 leading-relaxed ${
+                                            isSystemAlert 
+                                            ? 'bg-rose-50/50 border border-rose-100 text-rose-600 font-bold text-[10px]' 
+                                            : userNotes ? 'text-[10px] text-slate-400 font-medium' : 'text-[11px] text-slate-500 bg-slate-50 border border-slate-100 italic shadow-inner'
+                                        }`}>
+                                            {!userNotes && <Info size={isSystemAlert ? 12 : 14} className={isSystemAlert ? 'text-rose-500 shrink-0 mt-0.5' : 'text-teal-500 shrink-0 mt-0.5'} />}
+                                            <span className="whitespace-pre-wrap">
+                                                {systemNotes
+                                                    .replace('[SISTEMA]', '🚩')
+                                                    .replace('Consulta base realizada em:', '📅 Base em:')
+                                                    .replace('Período de retorno:', '⏳ Retorno:')}
+                                            </span>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         );
                     })()}
