@@ -126,7 +126,7 @@ const AdminDashboard: React.FC = () => {
         try {
             const [docRes, specRes] = await Promise.all([
                 supabase.from('doctors').select('id, name').order('name'),
-                supabase.from('specialties').select('id, name').or('name.ilike.%fisioterap_a%,name.ilike.%psicolog_a%').order('name')
+                supabase.from('specialties').select('id, name').not('name', 'ilike', '%fisioterapia%').not('name', 'ilike', '%psicologia%').order('name')
             ]);
             if (docRes.data) setDoctors(docRes.data);
             if (specRes.data) setSpecialties(specRes.data);
@@ -215,7 +215,12 @@ const AdminDashboard: React.FC = () => {
             const aptDate = parseISO(a.date);
             const withinDate = isWithinInterval(aptDate, { start, end });
             const matchType = filterType === 'all' || a.type === filterType;
-            return withinDate && matchType;
+            
+            // Excluir especialidades de terapia contínua do dashboard médico
+            const isTherapy = a.specialty_name?.toLowerCase().includes('fisioterapia') || 
+                             a.specialty_name?.toLowerCase().includes('psicologia');
+            
+            return withinDate && matchType && !isTherapy;
         });
 
         // Top-level filters (doctor and specialty from selector)

@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
-import { Save, User, X, Tag, Plus, Calendar, AlertCircle } from 'lucide-react';
+import { Save, User, X, Tag, Plus, Calendar, AlertCircle, Pencil, Copy, MessageCircle } from 'lucide-react';
 import { Especialidade } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import ModernDatePicker from './ui/ModernDatePicker';
 import PatientSearchSelect from './ui/PatientSearchSelect';
+import { copyToClipboard } from '../utils/clipboard';
+import { openWhatsApp } from '../utils/whatsapp';
+import PatientModal from './Modals/PatientModal';
 import { formatPatientName } from '../utils/formatters';
 import { normalizeString, includesNormalized } from '../utils/string';
 
@@ -56,6 +59,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
 
   // Patient and metadata state
   const [formData, setFormData] = useState({
+    patientId: '',
     patientName: '',
     phone: '',
     phone2: '',
@@ -63,11 +67,15 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
     status: 'scheduled',
     notes: '',
     selectedDate: new Date().toISOString().split('T')[0],
-    is_sus: false
+    birthDate: '',
+    is_sus: false,
+    is_internal_referral: false
   });
 
   const [showPhone2, setShowPhone2] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+  const [showSusExclusive, setShowSusExclusive] = useState(false);
+  const [isPatientModalOpen, setIsPatientModalOpen] = useState(false);
 
   // Global filtering based on search terms (will be used inside the mapped rows)
   const getFilteredSpecialties = (search: string, currentRowId: string) => {
@@ -78,7 +86,8 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
 
     return specialties.filter(s =>
       includesNormalized(s.name, search) &&
-      !alreadySelectedIds.includes(s.id)
+      !alreadySelectedIds.includes(s.id) &&
+      (!s.is_sus_exclusive || showSusExclusive || formData.is_sus)
     );
   };
 
@@ -98,6 +107,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
       const [p1, p2] = rawPhone.split(' / ');
 
       setFormData({
+        patientId: initialData.patient_id || '',
         patientName: initialData.patients?.name || '',
         phone: p1 || '',
         phone2: p2 || '',
@@ -105,10 +115,18 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
         status: initialData.status || 'scheduled',
         notes: initialData.notes || '',
         selectedDate: initialData.date ? initialData.date.split('T')[0] : new Date().toISOString().split('T')[0],
-        is_sus: initialData.is_sus || initialData.patients?.is_sus || false
+        birthDate: initialData.patients?.birth_date || '',
+        is_sus: initialData.patients?.is_sus || false,
+        is_internal_referral: initialData.is_internal_referral || false
       });
-
       if (p2) setShowPhone2(true);
+
+      // Restore the "Liberar SUS" visual toggle if the appointment itself was SUS but the patient is not.
+      if (initialData.is_sus && !initialData.patients?.is_sus) {
+        setShowSusExclusive(true);
+      } else {
+        setShowSusExclusive(false);
+      }
 
       // Handle initial selection for editing (only one row is supported for editing)
       const specId = initialData.specialty_id || initialData.doctors?.specialty_id || '';
@@ -178,15 +196,11 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
       ]);
 
       if (specRes.data) {
-        // Filter out SUS-exclusive specialties for FIRST consultation
-        const availableSpecialties = specRes.data
-          .filter(s => !s.is_sus_exclusive)
-          .map(s => ({
-            id: s.id,
-            name: s.name,
-            is_sus_exclusive: s.is_sus_exclusive
-          }));
-        setSpecialties(availableSpecialties);
+        setSpecialties(specRes.data.map(s => ({
+          id: s.id,
+          name: s.name,
+          is_sus_exclusive: s.is_sus_exclusive
+        })));
       }
       if (docRes.data) {
         setDoctors(docRes.data);
@@ -259,7 +273,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
     setLoading(true);
 
     try {
-      let patientId = initialData?.patient_id;
+      let patientId = formData.patientId || initialData?.patient_id;
 
       if (initialData && patientId) {
         const { error: updateError } = await supabase
@@ -267,7 +281,9 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
           .update({
             name: finalPatientName,
             phone: finalPhone,
-            cpf: finalCPF
+            cpf: finalCPF,
+            birth_date: formData.birthDate || null,
+            is_sus: formData.is_sus
           })
           .eq('id', patientId);
         if (updateError) throw updateError;
@@ -292,7 +308,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
             addToast(`Paciente já cadastrado como ${existing.name}. Usando cadastro existente.`, 'success');
             const { error: patientUpdateError } = await supabase
               .from('patients')
-              .update({ name: finalPatientName, phone: finalPhone, cpf: finalCPF, is_sus: formData.is_sus })
+              .update({ name: finalPatientName, phone: finalPhone, cpf: finalCPF, birth_date: formData.birthDate || null, is_sus: formData.is_sus })
               .eq('id', patientId);
             if (patientUpdateError) throw patientUpdateError;
           }
@@ -333,6 +349,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
               name: finalPatientName,
               phone: finalPhone,
               cpf: finalCPF,
+              birth_date: formData.birthDate || null,
               is_sus: formData.is_sus
             }])
             .select().single();
@@ -378,15 +395,20 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
 
         const dateISO = new Date(formData.selectedDate + 'T12:00:00').toISOString();
 
+        const spec = specialties.find(s => s.id === row.specialtyId);
+        const isSusSpec = spec?.is_sus_exclusive;
+        const finalStatus = (isSusSpec || formData.is_sus) ? 'waiting_sus' : formData.status;
+
         return {
           patient_id: patientId,
           doctor_id: row.doctorId || null,
           specialty_id: row.specialtyId,
           type: 'Primeira Consulta',
           date: dateISO,
-          status: formData.status,
+          status: finalStatus,
           notes: formData.notes,
-          is_sus: formData.is_sus
+          is_sus: formData.is_sus || !!isSusSpec,
+          is_internal_referral: formData.is_internal_referral
         };
       });
 
@@ -435,7 +457,28 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
 
           <div className="p-4 grid grid-cols-12 gap-3">
             <div className="col-span-12 md:col-span-8 space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest">Nome do Paciente</label>
+              <div className="flex items-center justify-between px-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nome do Paciente</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(formData.patientName, 'Nome', addToast)}
+                    className="p-1 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
+                    title="Copiar Nome"
+                  >
+                    <Copy size={11} />
+                  </button>
+                  {formData.patientId && (
+                    <button
+                      type="button"
+                      onClick={() => setIsPatientModalOpen(true)}
+                      className="flex items-center gap-1 text-[9px] font-black text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg transition-all uppercase tracking-tighter"
+                    >
+                      <Pencil size={10} /> Editar Cadastro
+                    </button>
+                  )}
+                </div>
+              </div>
               <div className="relative group z-[60]">
                 <PatientSearchSelect
                   value={formData.patientName}
@@ -443,9 +486,11 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
                   onSelect={(patient) => {
                     setFormData(prev => ({
                       ...prev,
+                      patientId: patient.id,
                       patientName: formatPatientName(patient.name),
                       cpf: patient.cpf || prev.cpf,
                       phone: patient.phone || prev.phone,
+                      birthDate: patient.birth_date || prev.birthDate,
                       is_sus: !!patient.is_sus
                     }));
                     if (patient.is_blocked) {
@@ -462,28 +507,67 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
             </div>
 
             <div className="col-span-12 md:col-span-4 space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest">CPF</label>
-              <input
-                type="text"
-                placeholder="000.000.000-00"
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 transition-all outline-none font-bold text-slate-700 text-xs placeholder:text-slate-400 h-[42px]"
-                value={formData.cpf}
-                onChange={handleCPFChange}
-                maxLength={14}
+              <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest">Data de Nascimento</label>
+              <ModernDatePicker
+                value={formData.birthDate}
+                onChange={(date) => setFormData(prev => ({ ...prev, birthDate: date }))}
               />
             </div>
 
-            <div className="col-span-12 space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest">Telefone</label>
+            <div className="col-span-12 md:col-span-4 space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest">CPF</label>
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="(00) 00000-0000"
+                  placeholder="000.000.000-00"
                   className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 transition-all outline-none font-bold text-slate-700 text-xs placeholder:text-slate-400 h-[42px]"
-                  value={formData.phone}
-                  onChange={handlePhoneChange}
-                  maxLength={15}
+                  value={formData.cpf}
+                  onChange={handleCPFChange}
+                  maxLength={14}
                 />
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(formData.cpf, 'CPF', addToast)}
+                  className="p-2.5 bg-slate-50 text-slate-400 hover:text-indigo-600 border border-slate-200 rounded-xl transition-all hover:bg-white"
+                  title="Copiar CPF"
+                >
+                  <Copy size={14} />
+                </button>
+              </div>
+            </div>
+
+            <div className="col-span-12 md:col-span-8 space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest">Telefone</label>
+              <div className="flex gap-2">
+                <div className="flex-1 flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="(00) 00000-0000"
+                    className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 transition-all outline-none font-bold text-slate-700 text-xs placeholder:text-slate-400 h-[42px]"
+                    value={formData.phone}
+                    onChange={handlePhoneChange}
+                    maxLength={15}
+                  />
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(formData.phone, 'Telefone', addToast)}
+                      className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
+                      title="Copiar Telefone"
+                    >
+                      <Copy size={11} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openWhatsApp(formData.phone)}
+                      className="p-1.5 hover:bg-emerald-50 rounded-md text-emerald-500 hover:text-emerald-600 transition-colors"
+                      title="Abrir WhatsApp"
+                    >
+                      <MessageCircle size={14} />
+                    </button>
+                  </div>
+                </div>
+
                 {!showPhone2 && (
                   <button type="button" onClick={() => setShowPhone2(true)} className="px-3 py-2 bg-teal-50 text-teal-600 rounded-xl hover:bg-teal-100 transition-colors">
                     <Plus size={16} />
@@ -499,6 +583,24 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
                       onChange={handlePhone2Change}
                       maxLength={15}
                     />
+                    <div className="flex items-center gap-1 self-center ml-1">
+                       <button
+                        type="button"
+                        onClick={() => copyToClipboard(formData.phone2, 'Telefone 2', addToast)}
+                        className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
+                        title="Copiar Telefone 2"
+                      >
+                        <Copy size={11} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openWhatsApp(formData.phone2)}
+                        className="p-1.5 hover:bg-emerald-50 rounded-md text-emerald-500 hover:text-emerald-600 transition-colors"
+                        title="Abrir WhatsApp 2"
+                      >
+                        <MessageCircle size={14} />
+                      </button>
+                    </div>
                     <button type="button" onClick={() => { setShowPhone2(false); setFormData(p => ({ ...p, phone2: '' })) }} className="px-3 py-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-colors">
                       <X size={16} />
                     </button>
@@ -508,7 +610,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
             </div>
           </div>
 
-          <div className="px-4 pb-4">
+          <div className="px-4 pb-4 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setFormData(prev => ({ ...prev, is_sus: !prev.is_sus }))}
@@ -517,7 +619,18 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
               <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-all ${formData.is_sus ? 'border-blue-600 bg-blue-600' : 'border-slate-300'}`}>
                 {formData.is_sus && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
               </div>
-              <span className="text-[10px] font-black uppercase tracking-widest">Paciente SUS</span>
+              <span className="text-[10px] font-black uppercase tracking-widest leading-none">Paciente SUS</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFormData(prev => ({ ...prev, is_internal_referral: !prev.is_internal_referral }))}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${formData.is_internal_referral ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-sm' : 'bg-slate-50 border-slate-100 text-slate-400 opacity-60'}`}
+            >
+              <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-all ${formData.is_internal_referral ? 'border-amber-600 bg-amber-600' : 'border-slate-300'}`}>
+                {formData.is_internal_referral && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-widest leading-none">Encaminhamento Interno</span>
             </button>
           </div>
 
@@ -557,6 +670,15 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
               <h3 className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center gap-2">
                 <Tag size={14} className="text-indigo-500" /> Especialidades Desejadas
               </h3>
+              {!formData.is_sus && (
+                <button
+                  type="button"
+                  onClick={() => setShowSusExclusive(!showSusExclusive)}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-tight transition-all border ${showSusExclusive ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm' : 'bg-slate-50 text-slate-400 border-slate-100 hover:text-indigo-600 hover:bg-white'}`}
+                >
+                  {showSusExclusive ? '🔒 Ocultar SUS' : '🔓 Liberar SUS'}
+                </button>
+              )}
             </div>
             <button
               type="button"
@@ -845,6 +967,26 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
           </button>
         </div>
       </fieldset >
+      <PatientModal
+        isOpen={isPatientModalOpen}
+        onClose={(updatedPatient) => {
+          setIsPatientModalOpen(false);
+          if (updatedPatient) {
+            const [p1, p2] = (updatedPatient.phone || '').split(' / ');
+            setFormData(prev => ({
+              ...prev,
+              patientName: formatPatientName(updatedPatient.name),
+              cpf: updatedPatient.cpf || prev.cpf,
+              phone: p1 || prev.phone,
+              phone2: p2 || prev.phone2,
+              birthDate: updatedPatient.birth_date || prev.birthDate,
+              is_sus: !!updatedPatient.is_sus
+            }));
+            if (p2) setShowPhone2(true);
+          }
+        }}
+        patientId={formData.patientId}
+      />
     </form >
   );
 };

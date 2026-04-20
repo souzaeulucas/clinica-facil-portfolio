@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
-import { Plus, Save, X } from 'lucide-react';
+import { Plus, Save, X, Calendar, Copy, MessageCircle } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import ModernDatePicker from './ui/ModernDatePicker';
+import { copyToClipboard } from '../utils/clipboard';
+import { openWhatsApp } from '../utils/whatsapp';
 
 interface PatientFormProps {
     patientId?: string;
-    onSuccess: () => void;
+    onSuccess: (data?: any) => void;
     initialData?: any;
 }
 
@@ -18,6 +21,7 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientId, onSuccess, initial
         phone: '',
         phone2: '',
         cpf: '',
+        birth_date: '',
         condition: 'none',
         is_sus: false
     });
@@ -32,6 +36,7 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientId, onSuccess, initial
                 phone: p1 || '',
                 phone2: p2 || '',
                 cpf: initialData.cpf || '',
+                birth_date: initialData.birth_date || '',
                 condition: initialData.condition || 'none',
                 is_sus: !!initialData.is_sus
             });
@@ -49,6 +54,7 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientId, onSuccess, initial
                             phone: p1 || '',
                             phone2: p2 || '',
                             cpf: data.cpf || '',
+                            birth_date: data.birth_date || '',
                             condition: data.condition || 'none',
                             is_sus: !!data.is_sus
                         });
@@ -104,15 +110,16 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientId, onSuccess, initial
             };
 
             if (patientId) {
-                const { error } = await supabase.from('patients').update(payload).eq('id', patientId);
+                const { data: updated, error } = await supabase.from('patients').update(payload).eq('id', patientId).select().single();
                 if (error) throw error;
                 addToast('Paciente atualizado com sucesso!', 'success');
+                onSuccess(updated);
             } else {
-                const { error } = await supabase.from('patients').insert([payload]);
+                const { data: created, error } = await supabase.from('patients').insert([payload]).select().single();
                 if (error) throw error;
                 addToast('Paciente cadastrado com sucesso!', 'success');
+                onSuccess(created);
             }
-            onSuccess();
         } catch (error) {
             console.error('Error saving patient:', error);
             addToast('Erro ao salvar paciente', 'error');
@@ -142,9 +149,19 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientId, onSuccess, initial
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-1.5">
-                    <label className="text-xs font-black text-slate-400 ml-1 uppercase tracking-wider">
-                        CPF
-                    </label>
+                    <div className="flex items-center justify-between pr-2">
+                        <label className="text-xs font-black text-slate-400 ml-1 uppercase tracking-wider">
+                            CPF
+                        </label>
+                        <button
+                            type="button"
+                            onClick={() => copyToClipboard(formData.cpf, 'CPF', addToast)}
+                            className="p-1 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
+                            title="Copiar CPF"
+                        >
+                            <Copy size={12} />
+                        </button>
+                    </div>
                     <input
                         type="text"
                         name="cpf"
@@ -157,19 +174,47 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientId, onSuccess, initial
                 </div>
 
                 <div className="space-y-1.5">
-                    <label className="text-xs font-black text-slate-400 ml-1 uppercase tracking-wider flex items-center justify-between">
-                        Telefone
-                        {!showPhone2 && (
+                    <ModernDatePicker
+                        label="Data de Nascimento"
+                        value={formData.birth_date}
+                        onChange={(date) => setFormData(prev => ({ ...prev, birth_date: date }))}
+                    />
+                </div>
+
+                <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                        <label className="text-xs font-black text-slate-400 ml-1 uppercase tracking-wider flex items-center gap-2">
+                            Telefone
+                            {!showPhone2 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPhone2(true)}
+                                    className="text-indigo-600 hover:text-indigo-700 p-1 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-1 text-[10px]"
+                                    title="Adicionar segundo telefone"
+                                >
+                                    <Plus size={12} /> <span className="font-bold">ADD EXTRA</span>
+                                </button>
+                            )}
+                        </label>
+                        <div className="flex items-center gap-1 pr-1">
                             <button
                                 type="button"
-                                onClick={() => setShowPhone2(true)}
-                                className="text-indigo-600 hover:text-indigo-700 p-1 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-1 text-[10px]"
-                                title="Adicionar segundo telefone"
+                                onClick={() => copyToClipboard(formData.phone, 'Telefone', addToast)}
+                                className="p-1 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
+                                title="Copiar Telefone"
                             >
-                                <Plus size={12} /> <span className="font-bold">ADD EXTRA</span>
+                                <Copy size={12} />
                             </button>
-                        )}
-                    </label>
+                            <button
+                                type="button"
+                                onClick={() => openWhatsApp(formData.phone)}
+                                className="p-1 hover:bg-emerald-50 rounded-md text-emerald-500 hover:text-emerald-600 transition-colors"
+                                title="Abrir WhatsApp"
+                            >
+                                <MessageCircle size={14} />
+                            </button>
+                        </div>
+                    </div>
                     <input
                         type="text"
                         name="phone"
@@ -183,19 +228,39 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientId, onSuccess, initial
 
                 {showPhone2 && (
                     <div className="space-y-1.5 animate-in slide-in-from-left-2 duration-300 md:col-start-2">
-                        <label className="text-xs font-black text-slate-400 ml-1 uppercase tracking-wider flex items-center justify-between">
-                            Telefone 2
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setShowPhone2(false);
-                                    setFormData(prev => ({ ...prev, phone2: '' }));
-                                }}
-                                className="text-rose-500 hover:text-rose-600 p-1 hover:bg-rose-50 rounded-lg transition-colors"
-                            >
-                                <X size={14} />
-                            </button>
-                        </label>
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs font-black text-slate-400 ml-1 uppercase tracking-wider flex items-center gap-2">
+                                Telefone 2
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowPhone2(false);
+                                        setFormData(prev => ({ ...prev, phone2: '' }));
+                                    }}
+                                    className="text-rose-500 hover:text-rose-600 p-1 hover:bg-rose-50 rounded-lg transition-colors"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </label>
+                            <div className="flex items-center gap-1 pr-1">
+                                <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(formData.phone2, 'Telefone 2', addToast)}
+                                    className="p-1 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
+                                    title="Copiar Telefone 2"
+                                >
+                                    <Copy size={12} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => openWhatsApp(formData.phone2)}
+                                    className="p-1 hover:bg-emerald-50 rounded-md text-emerald-500 hover:text-emerald-600 transition-colors"
+                                    title="Abrir WhatsApp 2"
+                                >
+                                    <MessageCircle size={14} />
+                                </button>
+                            </div>
+                        </div>
                         <input
                             type="text"
                             name="phone2"

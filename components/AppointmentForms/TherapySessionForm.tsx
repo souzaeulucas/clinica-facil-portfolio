@@ -9,11 +9,13 @@ import { formatPatientName } from '../../utils/formatters';
 import { normalizeString } from '../../utils/string';
 import { parseISO, startOfDay, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { Clock, Calendar, AlertCircle } from 'lucide-react';
 
 // Sub-components
 import PatientDetails from './TherapyForm/PatientDetails';
 import SessionSchedule from './TherapyForm/SessionSchedule';
 import FinancialSettings from './TherapyForm/FinancialSettings';
+import PatientUpcomingAppointments from '../PatientUpcomingAppointments';
 
 interface Patient {
     id: string;
@@ -78,6 +80,7 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
     const [newPatientCPF, setNewPatientCPF] = useState('');
     const [newPatientPhone, setNewPatientPhone] = useState('');
     const [isFirstSessionEvaluation, setIsFirstSessionEvaluation] = useState(false);
+    const [hasConflict, setHasConflict] = useState(false);
 
     const patientSearchRef = useRef<HTMLDivElement>(null);
 
@@ -111,7 +114,7 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
             let effectiveDate = state?.preSelectedDate || '';
             let effectiveDoctorId = state?.selectedDoctorId || '';
 
-            // 2. Handle initialData (Primary source)
+            // 2. Handle initialData (Primary source from AppointmentList coordinator)
             if (initialData) {
                 const plan = initialData.treatment_plans || initialData;
                 const patient = initialData.patients || plan.patient || initialData.patient;
@@ -164,7 +167,7 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
                 try {
                     const dateObj = parseISO(effectiveDate);
                     const dayName = format(dateObj, 'EEEE', { locale: ptBR });
-                    // Capitalize: "sexta-feira" -> "Sexta-feira"
+                    // Capitalize to match weekDays array: "sexta-feira" -> "Sexta-feira"
                     const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
                     setSelectedDays([capitalizedDay]);
                 } catch (e) {
@@ -284,6 +287,11 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
 
         if (!selectedSpecialtyId || selectedDays.length === 0) {
             addToast('Selecione especialidade e dias da semana', 'error');
+            return;
+        }
+
+        if (selectedDays.length !== sessionsPerWeek && !isFirstSessionEvaluation) {
+            addToast(`Você selecionou ${sessionsPerWeek}x na semana, mas marcou ${selectedDays.length} dia(s). Por favor, ajuste a seleção.`, 'error');
             return;
         }
 
@@ -457,6 +465,7 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
                 const daysChanged = JSON.stringify(initialData.treatment_plans?.schedule_days?.sort()) !== JSON.stringify(selectedDays.sort());
                 const timeChanged = initialData.treatment_plans?.schedule_time?.slice(0, 5) !== scheduleTime.slice(0, 5);
                 const sessionsChanged = initialData.treatment_plans?.total_sessions !== totalSessions;
+                const sessionsPerWeekChanged = initialData.treatment_plans?.sessions_per_week !== sessionsPerWeek;
                 const startDateChanged = initialData.treatment_plans?.start_date?.slice(0, 10) !== startDate.slice(0, 10);
 
                 const oldPlan = initialData.treatment_plans || initialData;
@@ -464,7 +473,7 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
                 const isReactivation = wasInactive && planData.status === 'active';
 
                 // If structural changes occurred, or if we are reactivating a plan (to rebuild missing ghosts), we must Sync the Agenda
-                if (daysChanged || timeChanged || sessionsChanged || startDateChanged || isReactivation) {
+                if (daysChanged || timeChanged || sessionsChanged || startDateChanged || isReactivation || sessionsPerWeekChanged) {
                     // 1. Prepare REGENERATION properly
                     // EXTREMELY IMPORTANT FIX: Always reconstruct from the plan's 'start_date' so we can fill in any missing or cancelled holes
                     // left behind by bugs or bulk cancellations, regardless of which appointment was clicked to open the Edit modal.
@@ -484,14 +493,13 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
                     (allExisting || []).forEach(apt => {
                         const aptDate = startOfDay(parseISO(apt.date));
 
-                        // We ONLY preserve physical answers (attended, missed, justified) or active sessions that are NOT cancelled.
-                        const isLimiterOrScheduled = apt.status === 'scheduled' || apt.status === 'cancelled';
-                        const isPhysicalCancel = apt.attendance_status === 'cancelled';
+                        // We ONLY preserve physical records (attended, missed, justified)
+                        const isPhysicalRecord = ['attended', 'missed', 'justified'].includes(apt.attendance_status);
 
-                        if (!isLimiterOrScheduled && !isPhysicalCancel) {
+                        if (isPhysicalRecord) {
                             if (apt.type === 'Avaliação') {
                                 hasPreservedEvaluation = true;
-                                // Evaluations don't count towards total_sessions, so we don't increment preservedCount
+                                // Evaluations don't count towards total_sessions
                             } else {
                                 preservedCount++;
                             }
@@ -583,7 +591,8 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
                     await supabase.from('appointments')
                         .delete()
                         .eq('treatment_plan_id', planId)
-                        .in('status', ['scheduled', 'cancelled']);
+                        .in('status', ['scheduled', 'cancelled'])
+                        .is('attendance_status', null); // IMPORTANT: Only delete clean scheduled slots, preserve history (missed/justified)
 
                     // Bulk insert new ones
                     if (appointmentsToCreate.length > 0) {
@@ -786,6 +795,27 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
                     isBlocked={selectedPatient?.is_blocked === true}
                     socialPrice={profile?.social_price || 15}
                 />
+
+                {/* Patient Upcoming Appointments & Conflict Check */}
+                {selectedPatient && (
+                    <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-slate-200 mt-4">
+                        <PatientUpcomingAppointments 
+                            patientId={selectedPatient.id} 
+                            currentSelection={new Date(startDate + 'T' + scheduleTime)}
+                            onConflict={setHasConflict}
+                            allowedSpecialties={['Psicologia', 'Fisioterapia', 'Acupuntura']}
+                        />
+                        
+                        {hasConflict && (
+                            <div className="mt-3 p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 animate-pulse">
+                                <AlertCircle size={16} className="text-rose-500" />
+                                <p className="text-[10px] font-black text-rose-700 uppercase tracking-tight">
+                                    Atenção: O paciente já possui agendamento nesta data!
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                )}
             </fieldset>
         </form>
     );

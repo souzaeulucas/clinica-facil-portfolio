@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../services/supabase';
-import { Plus, Trash2, Search, Pencil, Check, Star, Activity, User } from 'lucide-react';
+import { Plus, Trash2, Search, Pencil, Check, Star, Activity, User, Copy, MessageCircle } from 'lucide-react';
+import { copyToClipboard } from '../../utils/clipboard';
+import { openWhatsApp } from '../../utils/whatsapp';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import ConfirmModal from '../../components/ConfirmModal';
 import { useToast } from '../../contexts/ToastContext';
@@ -319,15 +321,46 @@ const PatientList: React.FC = () => {
                                             </div>
                                         </td>
                                         <td className="px-6 py-5">
-                                            <span className="text-sm font-black text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200/50">
-                                                {patient.cpf || 'NÃO INFORMADO'}
-                                            </span>
+                                            <div className="flex items-center gap-2 group/cpf">
+                                                <span className="text-sm font-black text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200/50">
+                                                    {patient.cpf || 'NÃO INFORMADO'}
+                                                </span>
+                                                {patient.cpf && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); copyToClipboard(patient.cpf, 'CPF', addToast); }}
+                                                        className="opacity-0 group-hover/cpf:opacity-100 p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-all"
+                                                        title="Copiar CPF"
+                                                    >
+                                                        <Copy size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-6 py-5">
-                                            <span className="text-sm font-bold text-slate-600 flex items-center gap-2">
-                                                <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                                                {patient.phone || '-'}
-                                            </span>
+                                            <div className="flex items-center gap-3 group/phone">
+                                                <span className="text-sm font-bold text-slate-600 flex items-center gap-2">
+                                                    <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                                                    {patient.phone || '-'}
+                                                </span>
+                                                {patient.phone && (
+                                                    <div className="flex items-center gap-1 opacity-0 group-hover/phone:opacity-100 transition-all">
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); copyToClipboard(patient.phone, 'Telefone', addToast); }}
+                                                            className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-all"
+                                                            title="Copiar Telefone"
+                                                        >
+                                                            <Copy size={14} />
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); openWhatsApp(patient.phone); }}
+                                                            className="p-1.5 hover:bg-emerald-50 rounded-md text-emerald-500 hover:text-emerald-600 transition-all"
+                                                            title="Abrir WhatsApp"
+                                                        >
+                                                            <MessageCircle size={16} />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-8 py-5 text-right" onClick={(e) => e.stopPropagation()}>
                                             <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">

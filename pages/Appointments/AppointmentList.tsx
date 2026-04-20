@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { supabase } from '../../services/supabase';
 import { format, parseISO } from 'date-fns';
-import { Plus, Calendar, Clock, User, Stethoscope, Trash2, Pencil, Filter, X, SquareCheck, Square, CircleAlert, Info, Search, Star, Activity, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Calendar, Clock, User, Stethoscope, Trash2, Pencil, Filter, X, SquareCheck, Square, CircleAlert, Info, Search, Star, Activity, Check, ChevronDown, ChevronUp, XCircle, AlertCircle } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import ModernMonthPicker from '../../components/ui/ModernMonthPicker';
 import ModernSelect from '../../components/ui/ModernSelect';
@@ -13,6 +13,9 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Appointment } from '../../types';
 import AppointmentModal from '../../components/Modals/AppointmentModal';
+import { copyToClipboard } from '../../utils/clipboard';
+import { openWhatsApp, processWhatsAppTemplate } from '../../utils/whatsapp';
+import { Copy, MessageCircle } from 'lucide-react';
 
 import { normalizeString, includesNormalized } from '../../utils/string';
 
@@ -26,10 +29,11 @@ const AppointmentList: React.FC = () => {
     const [specialties, setSpecialties] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
-    const [activeTab, setActiveTab] = useState<'pending' | 'official'>('pending');
+    const [activeTab, setActiveTab] = useState<'pending' | 'official' | 'sus'>('pending');
     const [sortOrder, setSortOrder] = useState<'oldest' | 'newest' | 'az' | 'za'>('newest');
     const [currentPage, setCurrentPage] = useState(1);
-    const [globalCounts, setGlobalCounts] = useState({ pending: 0, official: 0 }); // Global counts
+    const [globalCounts, setGlobalCounts] = useState({ pending: 0, official: 0, sus: 0 }); // Global counts
+    const [systemSettings, setSystemSettings] = useState<Record<string, string>>({});
     const ITEMS_PER_PAGE = 15;
 
     const [confirmModal, setConfirmModal] = useState<{
@@ -142,7 +146,11 @@ const AppointmentList: React.FC = () => {
         if (appointments.length === 0) return;
 
         const currentTabIds = appointments
-            .filter(a => activeTab === 'pending' ? a.status !== 'official' : a.status === 'official')
+            .filter(a => {
+                if (activeTab === 'official') return a.status === 'official';
+                if (activeTab === 'sus') return a.status === 'waiting_sus';
+                return a.status !== 'official' && a.status !== 'waiting_sus';
+            })
             .map(a => a.id);
 
         if (currentTabIds.length > 0) {
@@ -217,9 +225,11 @@ const AppointmentList: React.FC = () => {
 
     // Sincronizar campos de busca quando os filtros mudam via navegação
     useEffect(() => {
-        if (filters.doctor && doctors.length > 0) {
+        if (filters.doctor && filters.doctor !== 'unassigned' && doctors.length > 0) {
             const doc = doctors.find(d => d.id === filters.doctor);
             if (doc) setDoctorSearch(doc.name);
+        } else if (filters.doctor === 'unassigned') {
+            setDoctorSearch('Sem Médico Definido');
         } else if (!filters.doctor) {
             setDoctorSearch('');
         }
@@ -240,6 +250,7 @@ const AppointmentList: React.FC = () => {
                 .from('appointments')
                 .select(`
                     id, date, type, status, patient_id, doctor_id, specialty_id, notes, created_at, treatment_plan_id,
+                    is_internal_referral, is_sus,
                     patients (id, name, phone, cpf, birth_date, condition, is_sus),
                     doctors (id, name, specialty_id, spec:specialties (name)),
                     specialty:specialties!specialty_id (name),
@@ -250,10 +261,12 @@ const AppointmentList: React.FC = () => {
             // Apply Server-side filters
             if (activeTab === 'official') {
                 query = query.eq('status', 'official');
+            } else if (activeTab === 'sus') {
+                query = query.eq('status', 'waiting_sus');
             } else {
                 // Modified: Exclude appointments that are part of a treatment plan (Session Management)
                 // These are already managed in the Agenda and should not appear as 'Pending' requests here.
-                query = query.neq('status', 'official').is('treatment_plan_id', null);
+                query = query.neq('status', 'official').neq('status', 'waiting_sus').is('treatment_plan_id', null);
             }
 
             if (filters.month) {
@@ -262,7 +275,13 @@ const AppointmentList: React.FC = () => {
                 query = query.gte('date', startDate).lt('date', endDate);
             }
 
-            if (filters.doctor) query = query.eq('doctor_id', filters.doctor);
+            if (filters.doctor) {
+                if (filters.doctor === 'unassigned') {
+                    query = query.is('doctor_id', null);
+                } else {
+                    query = query.eq('doctor_id', filters.doctor);
+                }
+            }
             if (filters.specialty) query = query.eq('specialty_id', filters.specialty);
             if (filters.type) query = query.eq('type', filters.type);
             if (filters.onlyUrgent) query = query.eq('status', 'urgent');
@@ -275,22 +294,31 @@ const AppointmentList: React.FC = () => {
             // Ordering - Always use assignment date for consistency as requested
             query = query.order('date', { ascending: sortOrder === 'oldest' });
 
-            const [aptRes, docRes, specRes, pendingCountRes, officialCountRes] = await Promise.all([
+            const [aptRes, docRes, specRes, pendingCountRes, officialCountRes, susCountRes] = await Promise.all([
                 query.limit(1000), // Increased limit
                 supabase.from('doctors').select('id, name').order('name'),
                 supabase.from('specialties').select('id, name').order('name'),
-                supabase.from('appointments').select('*', { count: 'exact', head: true }).neq('status', 'official').is('treatment_plan_id', null),
-                supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('status', 'official')
+                supabase.from('appointments').select('*', { count: 'exact', head: true }).neq('status', 'official').neq('status', 'waiting_sus').is('treatment_plan_id', null),
+                supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('status', 'official'),
+                supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('status', 'waiting_sus')
             ]);
 
             if (aptRes.error) throw aptRes.error;
             setAppointments((aptRes.data as any) || []);
             setGlobalCounts({
                 pending: pendingCountRes.count || 0,
-                official: officialCountRes.count || 0
+                official: officialCountRes.count || 0,
+                sus: susCountRes.count || 0
             });
             if (docRes.data) setDoctors(docRes.data);
             if (specRes.data) setSpecialties(specRes.data);
+
+            // Fetch system settings for WhatsApp templates
+            const { data: settingsData } = await supabase.from('system_settings').select('key, value');
+            if (settingsData) {
+                const settingsMap = settingsData.reduce((acc: any, s: any) => ({ ...acc, [s.key]: s.value }), {});
+                setSystemSettings(settingsMap);
+            }
         } catch (error: any) {
             console.error('Error fetching data:', error);
             const msg = error.message || '';
@@ -314,8 +342,10 @@ const AppointmentList: React.FC = () => {
             // 1. Client-side status filter (Top priority for immediate UI sync)
             if (activeTab === 'official') {
                 if (apt.status !== 'official') return false;
+            } else if (activeTab === 'sus') {
+                if (apt.status !== 'waiting_sus') return false;
             } else {
-                if (apt.status === 'official') return false;
+                if (apt.status === 'official' || apt.status === 'waiting_sus') return false;
             }
 
             // 2. Search filter
@@ -332,7 +362,17 @@ const AppointmentList: React.FC = () => {
 
             return true;
         }).sort((a, b) => {
-            // Consistency: always sort by appointment date
+            // Priority 1: Internal Referral (Top precedence)
+            if (a.is_internal_referral && !b.is_internal_referral) return -1;
+            if (!a.is_internal_referral && b.is_internal_referral) return 1;
+
+            // Priority 2: Urgency (Second precedence)
+            if (activeTab !== 'official') {
+                if (a.status === 'urgent' && b.status !== 'urgent') return -1;
+                if (a.status !== 'urgent' && b.status === 'urgent') return 1;
+            }
+
+            // Priority 3: Consistency: always sort by appointment date
             const dateA = new Date(a.date).getTime();
             const dateB = new Date(b.date).getTime();
 
@@ -386,7 +426,9 @@ const AppointmentList: React.FC = () => {
     }, [navigate]);
 
     const handleMarkOfficial = React.useCallback(async (id: string, currentStatus: string) => {
-        const newStatus = currentStatus === 'official' ? 'scheduled' : 'official';
+        const apt = appointments.find(a => a.id === id);
+        const isSus = apt?.is_sus || apt?.patients?.is_sus;
+        const newStatus = currentStatus === 'official' ? (isSus ? 'waiting_sus' : 'scheduled') : 'official';
         try {
             const { error } = await supabase.from('appointments').update({
                 status: newStatus
@@ -397,10 +439,21 @@ const AppointmentList: React.FC = () => {
             setAppointments(prev => prev.filter(apt => apt.id !== id));
 
             // Update global counts locally for immediate feedback
-            setGlobalCounts(prev => ({
-                pending: newStatus === 'official' ? Math.max(0, prev.pending - 1) : prev.pending + 1,
-                official: newStatus === 'official' ? prev.official + 1 : Math.max(0, prev.official - 1)
-            }));
+            setGlobalCounts(prev => {
+                const newCounts = { ...prev };
+                if (newStatus === 'official') {
+                    if (activeTab === 'sus') newCounts.sus = Math.max(0, prev.sus - 1);
+                    else newCounts.pending = Math.max(0, prev.pending - 1);
+                    newCounts.official += 1;
+                } else {
+                    newCounts.official = Math.max(0, prev.official - 1);
+                    // Check if it should go back to SUS or Pending
+                    const apt = appointments.find(a => a.id === id);
+                    if (apt?.is_sus || apt?.patients?.is_sus) newCounts.sus += 1;
+                    else newCounts.pending += 1;
+                }
+                return newCounts;
+            });
 
             // Add notification when returning to pending
             if (newStatus === 'scheduled') {
@@ -652,7 +705,7 @@ const AppointmentList: React.FC = () => {
                 <div className="flex bg-slate-100 p-1 rounded-xl shrink-0">
                     <button
                         onClick={() => setActiveTab('pending')}
-                        className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'pending' ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'pending' ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
                     >
                         Pendentes
                         {globalCounts.pending > 0 && (
@@ -662,8 +715,19 @@ const AppointmentList: React.FC = () => {
                         )}
                     </button>
                     <button
+                        onClick={() => setActiveTab('sus')}
+                        className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'sus' ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        Fila SUS
+                        {globalCounts.sus > 0 && (
+                            <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                                {globalCounts.sus}
+                            </span>
+                        )}
+                    </button>
+                    <button
                         onClick={() => setActiveTab('official')}
-                        className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'official' ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'official' ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
                     >
                         Agendados
                         {globalCounts.official > 0 && (
@@ -929,7 +993,7 @@ const AppointmentList: React.FC = () => {
                                             setActiveDocIndex(prev => (prev < filteredDoctorsList.length - 1 ? prev + 1 : prev));
                                         } else if (e.key === 'ArrowUp') {
                                             e.preventDefault();
-                                            setActiveDocIndex(prev => (prev > -1 ? prev - 1 : prev));
+                                            setActiveDocIndex(prev => (prev > -2 ? prev - 1 : prev));
                                         } else if (e.key === 'Enter') {
                                             e.preventDefault();
                                             if (activeDocIndex >= 0 && activeDocIndex < filteredDoctorsList.length) {
@@ -940,6 +1004,10 @@ const AppointmentList: React.FC = () => {
                                             } else if (activeDocIndex === -1) {
                                                 handleFilterChange('doctor', '');
                                                 setDoctorSearch('');
+                                                setIsDocDropdownOpen(false);
+                                            } else if (activeDocIndex === -2) {
+                                                handleFilterChange('doctor', 'unassigned');
+                                                setDoctorSearch('Sem Médico Definido');
                                                 setIsDocDropdownOpen(false);
                                             }
                                         } else if (e.key === 'Escape') {
@@ -990,6 +1058,17 @@ const AppointmentList: React.FC = () => {
                                                 className={`w-full text-left px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50 rounded-lg transition-colors uppercase tracking-widest ${activeDocIndex === -1 ? 'bg-slate-50 ring-1 ring-slate-200' : ''}`}
                                             >
                                                 Todos os Médicos
+                                            </button>
+                                            <button
+                                                tabIndex={-1}
+                                                onClick={() => {
+                                                    handleFilterChange('doctor', 'unassigned');
+                                                    setDoctorSearch('Sem Médico Definido');
+                                                    setIsDocDropdownOpen(false);
+                                                }}
+                                                className={`w-full text-left px-4 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 rounded-lg transition-colors uppercase tracking-widest ${activeDocIndex === -2 ? 'bg-rose-50 ring-1 ring-rose-200 font-black' : ''}`}
+                                            >
+                                                Sem Médico Definido (Qualquer Um)
                                             </button>
                                             {filteredDoctorsList.map((doc, index) => (
                                                 <button
@@ -1058,7 +1137,10 @@ const AppointmentList: React.FC = () => {
                                 }}
                                 onDelete={handleDelete}
                                 onMarkOfficial={handleMarkOfficial}
+                                addToast={addToast}
                                 isAdmin={isAdmin}
+                                systemSettings={systemSettings}
+                                activeTab={activeTab}
                             />
                         ))
                     )}
@@ -1132,14 +1214,46 @@ const AppointmentItem = React.memo<{
     onEdit: (apt: Appointment) => void;
     onDelete: (id: string) => void;
     onMarkOfficial: (id: string, currentStatus: string) => void;
+    addToast: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
     isAdmin: boolean;
-}>(({ apt, isSelected, onToggle, onEdit, onDelete, onMarkOfficial, isAdmin }) => {
+    systemSettings: Record<string, string>;
+    activeTab: string;
+}>(({ apt, isSelected, onToggle, onEdit, onDelete, onMarkOfficial, addToast, isAdmin, systemSettings, activeTab }) => {
+    
+    const handleWhatsApp = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const phone = apt.patients?.phone;
+        if (!phone) return;
+
+        // Only use template for 'pending' or 'sus' tabs (Waitlist/Queue)
+        if (activeTab === 'pending' || activeTab === 'sus') {
+            const template = systemSettings['whatsapp_template_vaga_disponivel'] || 
+                "Olá, falo em nome do {clinica}\n\nPaciente {paciente} deixou o nome na lista de espera para {especialidade}. Tivemos uma desistência com o médico {medico}, no dia {data} às {hora} horas. Tem interesse na consulta?";
+            
+            const message = processWhatsAppTemplate(template, {
+                paciente: apt.patients?.name || '',
+                especialidade: apt.specialty?.name || apt.doctors?.spec?.name || '',
+                medico: apt.doctors?.name || '',
+                data: format(parseISO(apt.date), 'dd/MM/yyyy'),
+                hora: format(parseISO(apt.date), 'HH:mm'),
+                horas: format(parseISO(apt.date), 'HH:mm'),
+                clinica: systemSettings['clinic_name'] || 'CIS - Centro Integrado de Saúde'
+            });
+
+            openWhatsApp(phone, message);
+        } else {
+            // Default blank chat for other tabs
+            openWhatsApp(phone);
+        }
+    };
     return (
         <div
             onClick={() => onToggle(apt.id)}
             className={`group flex flex-col md:flex-row md:items-center justify-between p-4 md:p-5 rounded-2xl border transition-all cursor-pointer ${isSelected
                 ? 'border-teal-500 bg-teal-50/20 shadow-lg ring-1 ring-teal-500/20 translate-x-1'
-                : 'border-slate-100 bg-white shadow-sm hover:shadow-md hover:border-slate-200'
+                : apt.status === 'absent_justified' ? 'border-amber-200 bg-amber-50/50 shadow-sm' :
+                    apt.status === 'absent' ? 'border-rose-200 bg-rose-50/50 shadow-sm' :
+                        'border-slate-100 bg-white shadow-sm hover:shadow-md hover:border-slate-200'
                 } ${apt.status === 'urgent' ? 'border-l-4 border-l-rose-500' : ''}`}
         >
             <div className="flex items-start gap-4">
@@ -1151,11 +1265,26 @@ const AppointmentItem = React.memo<{
 
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center flex-wrap gap-2 mb-2">
-                        <h3 className="font-black text-slate-900 text-lg leading-tight tracking-tight">{apt.patients?.name || `Paciente sem nome (ID: ${apt.id.slice(0, 8)})`}</h3>
+                        <div className="flex items-center gap-2 group/name">
+                            <h3 className="font-black text-slate-900 text-lg leading-tight tracking-tight">{apt.patients?.name || `Paciente sem nome (ID: ${apt.id.slice(0, 8)})`}</h3>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); copyToClipboard(apt.patients?.name || '', 'Nome', addToast); }}
+                                className="opacity-0 group-hover/name:opacity-100 p-1 hover:bg-slate-100 rounded-md transition-all text-slate-400 hover:text-indigo-600"
+                                title="Copiar Nome"
+                            >
+                                <Copy size={12} />
+                            </button>
+                        </div>
                         {apt.patients?.condition === 'priority' && (
                             <span className="flex items-center gap-1 bg-amber-100 text-amber-700 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider border border-amber-200">
                                 <Star size={9} fill="currentColor" />
                                 Prioridade
+                            </span>
+                        )}
+                        {apt.is_internal_referral && (
+                            <span className="flex items-center gap-1 bg-rose-50 text-rose-700 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider border border-rose-200 shadow-sm animate-pulse">
+                                <Star size={9} fill="currentColor" />
+                                Médicos Interno
                             </span>
                         )}
                         {apt.patients?.condition === 'dpoc' && (
@@ -1183,6 +1312,55 @@ const AppointmentItem = React.memo<{
                                 <Check size={10} />
                                 Confirmado
                             </span>
+                        )}
+                        {apt.status === 'absent' && (
+                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-600 text-white text-[9px] font-black uppercase tracking-widest border border-rose-500 shadow-sm">
+                                <XCircle size={10} />
+                                Falta
+                            </span>
+                        )}
+                        {apt.status === 'absent_justified' && (
+                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500 text-white text-[9px] font-black uppercase tracking-widest border border-amber-600 shadow-sm">
+                                <AlertCircle size={10} />
+                                Falta Justificada
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-3">
+                        {apt.patients?.cpf && (
+                            <div className="flex items-center gap-2 group/cpf">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">CPF:</span>
+                                <span className="text-[11px] font-bold text-slate-600">{apt.patients.cpf}</span>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); copyToClipboard(apt.patients?.cpf || '', 'CPF', addToast); }}
+                                    className="opacity-0 group-hover/cpf:opacity-100 p-1 hover:bg-slate-100 rounded-md transition-all text-slate-400 hover:text-indigo-600"
+                                >
+                                    <Copy size={12} />
+                                </button>
+                            </div>
+                        )}
+                        {apt.patients?.phone && (
+                            <div className="flex items-center gap-2 group/phone">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">TEL:</span>
+                                <span className="text-[11px] font-bold text-slate-600">{apt.patients.phone}</span>
+                                <div className="flex items-center gap-1 opacity-0 group-hover/phone:opacity-100 transition-all">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); copyToClipboard(apt.patients?.phone || '', 'Telefone', addToast); }}
+                                        className="p-1 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600"
+                                        title="Copiar Telefone"
+                                    >
+                                        <Copy size={12} />
+                                    </button>
+                                    <button
+                                        onClick={handleWhatsApp}
+                                        className="p-1 hover:bg-emerald-50 rounded-md text-emerald-500 hover:text-emerald-600"
+                                        title="Abrir WhatsApp"
+                                    >
+                                        <MessageCircle size={14} />
+                                    </button>
+                                </div>
+                            </div>
                         )}
                     </div>
 

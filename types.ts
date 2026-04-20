@@ -126,6 +126,7 @@ export interface Appointment {
   attendance_status?: 'scheduled' | 'attended' | 'missed' | 'justified' | 'cancelled';
   is_paid?: boolean;
   is_sus?: boolean;
+  is_internal_referral?: boolean;
   patients?: { id: string; name: string; phone: string; cpf?: string; birth_date?: string; condition?: 'none' | 'priority' | 'dpoc'; is_sus?: boolean; is_blocked?: boolean; unexcused_absences?: number };
   patient?: { id: string; name: string; phone: string; cpf?: string; birth_date?: string; condition?: 'none' | 'priority' | 'dpoc'; is_sus?: boolean; is_blocked?: boolean; unexcused_absences?: number };
   doctors?: { id: string; name: string; specialty_id: string; spec: { name: string } };

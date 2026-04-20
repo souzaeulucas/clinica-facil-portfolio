@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../services/supabase';
-import { Save, User, X, Calendar, Clock, AlertCircle } from 'lucide-react';
+import { Save, User, X, Calendar, Clock, AlertCircle, Pencil, Copy, MessageCircle, Plus } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import ModernDatePicker from './ui/ModernDatePicker';
 import ModernSelect from './ui/ModernSelect';
 import PatientSearchSelect from './ui/PatientSearchSelect';
+import { copyToClipboard } from '../utils/clipboard';
+import { openWhatsApp } from '../utils/whatsapp';
+import PatientModal from './Modals/PatientModal';
 import { formatPatientName } from '../utils/formatters';
 import { normalizeString, includesNormalized } from '../utils/string';
 
@@ -24,6 +27,8 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
   const [formData, setFormData] = useState({
     patientId: '',
     patientName: '',
+    phone: '',
+    phone2: '',
     cpf: '',
     doctorId: '',
     consultationDate: '',
@@ -31,13 +36,16 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
     returnPeriodUnit: 'months',
     forecastDate: '',
     notes: '',
+    birthDate: '',
     is_sus: false
   });
+  const [showPhone2, setShowPhone2] = useState(false);
   const [doctorSearch, setDoctorSearch] = useState('');
   const [isDocDropdownOpen, setIsDocDropdownOpen] = useState(false);
   const [activeDocIndex, setActiveDocIndex] = useState(-1);
   const [isBlocked, setIsBlocked] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isPatientModalOpen, setIsPatientModalOpen] = useState(false);
 
   // Generic Selection State
   const [isGenericMode, setIsGenericMode] = useState(false);
@@ -176,9 +184,15 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
         }
       }
 
+      const rawPhone = initialData.patients?.phone || '';
+      const [p1, p2] = rawPhone.split(' / ');
+      if (p2) setShowPhone2(true);
+
       setFormData({
         patientId: initialData.patient_id || '',
         patientName: initialData.patients?.name || '',
+        phone: p1 || '',
+        phone2: p2 || '',
         cpf: initialData.patients?.cpf || '',
         doctorId: initialData.doctor_id || '',
         consultationDate: consultDate,
@@ -186,7 +200,8 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
         returnPeriodUnit: periodUnit,
         forecastDate: initialData.date ? initialData.date.split('T')[0] : '',
         notes: notesValue,
-        is_sus: initialData.is_sus || initialData.patients?.is_sus || false
+        birthDate: initialData.patients?.birth_date || '',
+        is_sus: initialData.patients?.is_sus || false
       });
 
       if (initialData.doctors?.name) {
@@ -246,6 +261,34 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
     setFormData(prev => ({ ...prev, cpf: value }));
   };
 
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 11) value = value.slice(0, 11);
+
+    if (value.length > 2) {
+      value = `(${value.slice(0, 2)}) ${value.slice(2)}`;
+    }
+    if (value.length > 10) {
+      value = `${value.slice(0, 10)}-${value.slice(10)}`;
+    }
+
+    setFormData(prev => ({ ...prev, phone: value }));
+  };
+
+  const handlePhone2Change = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 11) value = value.slice(0, 11);
+
+    if (value.length > 2) {
+      value = `(${value.slice(0, 2)}) ${value.slice(2)}`;
+    }
+    if (value.length > 10) {
+      value = `${value.slice(0, 10)}-${value.slice(10)}`;
+    }
+
+    setFormData(prev => ({ ...prev, phone2: value }));
+  };
+
   const getDoctorSpecialty = (doctorId: string) => {
     if (isGenericMode) {
       const s = specialties.find(s => s.id === selectedSpecialtyId);
@@ -292,6 +335,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
       let patientId = formData.patientId;
       const cleanName = searchTerm.trim();
       const cleanCPF = formData.cpf.replace(/\D/g, '');
+      const finalPhone = [formData.phone, formData.phone2].filter(p => p.trim()).join(' / ');
 
       if (cleanCPF) {
         // Check if patient exists by CPF (formatted or raw)
@@ -333,7 +377,9 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
             .from('patients')
             .update({
               name: cleanName,
+              phone: finalPhone,
               cpf: formData.cpf,
+              birth_date: formData.birthDate || null,
               is_sus: formData.is_sus
             })
             .eq('id', patientId);
@@ -382,14 +428,16 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
             await supabase
               .from('patients')
               .update({
+                phone: finalPhone,
                 cpf: formData.cpf,
+                birth_date: formData.birthDate || null,
                 is_sus: formData.is_sus
               })
               .eq('id', patientId);
           } else {
             const { data: newPatient, error: createError } = await supabase
               .from('patients')
-              .insert([{ name: cleanName, cpf: formData.cpf, is_sus: formData.is_sus }])
+              .insert([{ name: cleanName, phone: finalPhone, cpf: formData.cpf, birth_date: formData.birthDate || null, is_sus: formData.is_sus }])
               .select()
               .single();
             if (createError) throw createError;
@@ -440,7 +488,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
         } else {
           const { data: newPatient, error: createError } = await supabase
             .from('patients')
-            .insert([{ name: cleanName, is_sus: formData.is_sus }])
+            .insert([{ name: cleanName, phone: finalPhone, birth_date: formData.birthDate || null, is_sus: formData.is_sus }])
             .select()
             .single();
           if (createError) throw createError;
@@ -525,7 +573,28 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
 
           <div className="p-4 grid grid-cols-12 gap-3">
             <div className="col-span-12 md:col-span-8 space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest">Nome do Paciente</label>
+              <div className="flex items-center justify-between px-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nome do Paciente</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(searchTerm, 'Nome', addToast)}
+                    className="p-1 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
+                    title="Copiar Nome"
+                  >
+                    <Copy size={11} />
+                  </button>
+                  {formData.patientId && (
+                    <button
+                      type="button"
+                      onClick={() => setIsPatientModalOpen(true)}
+                      className="flex items-center gap-1 text-[9px] font-black text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg transition-all uppercase tracking-tighter"
+                    >
+                      <Pencil size={10} /> Editar Cadastro
+                    </button>
+                  )}
+                </div>
+              </div>
               <div className="relative group z-[60]">
                 <PatientSearchSelect
                   value={searchTerm}
@@ -536,14 +605,20 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
                   }}
                   onSelect={(patient) => {
                     const formattedName = formatPatientName(patient.name);
+                    const rawPhone = patient.phone || '';
+                    const [p1, p2] = rawPhone.split(' / ');
                     setSearchTerm(formattedName);
                     setFormData(prev => ({
                       ...prev,
                       patientName: formattedName,
                       patientId: patient.id,
+                      phone: p1 || '',
+                      phone2: p2 || '',
                       cpf: patient.cpf || prev.cpf,
+                      birthDate: patient.birth_date || prev.birthDate,
                       is_sus: !!patient.is_sus
                     }));
+                    if (p2) setShowPhone2(true);
                     if (patient.is_blocked) {
                       setIsBlocked(true);
                       addToast('Paciente bloqueado.', 'error');
@@ -556,16 +631,108 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
                 />
               </div>
             </div>
+
+            <div className="col-span-12 md:col-span-4 space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest">Data de Nascimento</label>
+              <ModernDatePicker
+                value={formData.birthDate || ''}
+                onChange={(date) => setFormData(p => ({ ...p, birthDate: date }))}
+              />
+            </div>
+
             <div className="col-span-12 md:col-span-4 space-y-1">
               <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest">CPF</label>
-              <input
-                type="text"
-                placeholder="000.000.000-00"
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 transition-all outline-none font-bold text-slate-700 text-xs placeholder:text-slate-400 h-[42px]"
-                value={formData.cpf}
-                onChange={handleCPFChange}
-                maxLength={14}
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="000.000.000-00"
+                  className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 transition-all outline-none font-bold text-slate-700 text-xs placeholder:text-slate-400 h-[42px]"
+                  value={formData.cpf}
+                  onChange={handleCPFChange}
+                  maxLength={14}
+                />
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(formData.cpf, 'CPF', addToast)}
+                  className="p-2.5 bg-slate-50 text-slate-400 hover:text-indigo-600 border border-slate-200 rounded-xl transition-all hover:bg-white"
+                  title="Copiar CPF"
+                >
+                  <Copy size={14} />
+                </button>
+              </div>
+            </div>
+
+            <div className="col-span-12 md:col-span-8 space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest">Telefone</label>
+              <div className="flex gap-2">
+                <div className="flex-1 flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="(00) 00000-0000"
+                    className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 transition-all outline-none font-bold text-slate-700 text-xs placeholder:text-slate-400 h-[42px]"
+                    value={formData.phone}
+                    onChange={handlePhoneChange}
+                    maxLength={15}
+                  />
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(formData.phone, 'Telefone', addToast)}
+                      className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
+                      title="Copiar Telefone"
+                    >
+                      <Copy size={11} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openWhatsApp(formData.phone)}
+                      className="p-1.5 hover:bg-emerald-50 rounded-md text-emerald-500 hover:text-emerald-600 transition-colors"
+                      title="Abrir WhatsApp"
+                    >
+                      <MessageCircle size={14} />
+                    </button>
+                  </div>
+                </div>
+
+                {!showPhone2 && (
+                  <button type="button" onClick={() => setShowPhone2(true)} className="px-3 py-2 bg-teal-50 text-teal-600 rounded-xl hover:bg-teal-100 transition-colors">
+                    <Plus size={16} />
+                  </button>
+                )}
+                {showPhone2 && (
+                  <div className="flex-1 flex gap-2 animate-in fade-in slide-in-from-left-2">
+                    <input
+                      type="text"
+                      placeholder="Outro telefone"
+                      className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 transition-all outline-none font-bold text-slate-700 text-xs h-[42px]"
+                      value={formData.phone2}
+                      onChange={handlePhone2Change}
+                      maxLength={15}
+                    />
+                    <div className="flex items-center gap-1 self-center ml-1">
+                       <button
+                        type="button"
+                        onClick={() => copyToClipboard(formData.phone2, 'Telefone 2', addToast)}
+                        className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
+                        title="Copiar Telefone 2"
+                      >
+                        <Copy size={11} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openWhatsApp(formData.phone2)}
+                        className="p-1.5 hover:bg-emerald-50 rounded-md text-emerald-500 hover:text-emerald-600 transition-colors"
+                        title="Abrir WhatsApp 2"
+                      >
+                        <MessageCircle size={14} />
+                      </button>
+                    </div>
+                    <button type="button" onClick={() => { setShowPhone2(false); setFormData(p => ({ ...p, phone2: '' })) }} className="px-3 py-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-colors">
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -842,6 +1009,28 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
           </button>
         </div>
       </fieldset>
+
+      <PatientModal
+        isOpen={isPatientModalOpen}
+        onClose={(updatedPatient) => {
+          setIsPatientModalOpen(false);
+          if (updatedPatient) {
+            const [p1, p2] = (updatedPatient.phone || '').split(' / ');
+            setSearchTerm(formatPatientName(updatedPatient.name));
+            setFormData(prev => ({
+              ...prev,
+              patientName: formatPatientName(updatedPatient.name),
+              cpf: updatedPatient.cpf || prev.cpf,
+              phone: p1 || prev.phone,
+              phone2: p2 || prev.phone2,
+              birthDate: updatedPatient.birth_date || prev.birthDate,
+              is_sus: !!updatedPatient.is_sus
+            }));
+            if (p2) setShowPhone2(true);
+          }
+        }}
+        patientId={formData.patientId}
+      />
     </form>
   );
 };

@@ -63,7 +63,7 @@ const AttendanceManagement: React.FC = () => {
         date: new Date().toISOString().split('T')[0],
         doctorId: '',
         specialty: '',
-        notes: 'Falta registrada manualmente'
+        notes: '[SISTEMA] Falta registrada manualmente'
     };
     const [manualForm, setManualForm] = useState(initialManualForm);
     const [doctorSearch, setDoctorSearch] = useState('');
@@ -229,7 +229,7 @@ const AttendanceManagement: React.FC = () => {
             date: apt.date.split('T')[0],
             doctorId: apt.doctors?.id || '',
             specialty: apt.specialty?.name || doc?.specialties?.name || '',
-            notes: (apt as any).notes || 'Falta registrada manualmente'
+            notes: (apt as any).notes || '[SISTEMA] Falta registrada manualmente'
         });
         setDoctorSearch(apt.doctors?.name || '');
         setShowManualModal(true);
@@ -336,7 +336,7 @@ const AttendanceManagement: React.FC = () => {
                         date: new Date(manualForm.date + 'T12:00:00').toISOString(),
                         type: 'Retorno',
                         status: 'absent',
-                        notes: `[SISTEMA] ${manualForm.notes}`
+                        notes: manualForm.notes || '[SISTEMA] Falta registrada manualmente'
                     }]);
 
                 if (aError) throw aError;

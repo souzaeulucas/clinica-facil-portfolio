@@ -1,7 +1,10 @@
-import React from 'react';
-import { Plus, CircleAlert } from 'lucide-react';
+import React, { useState } from 'react';
+import { Plus, CircleAlert, Pencil, Copy, MessageCircle } from 'lucide-react';
+import { copyToClipboard } from '../../../utils/clipboard';
+import { openWhatsApp } from '../../../utils/whatsapp';
 import PatientSearchSelect from '../../ui/PatientSearchSelect';
 import ModernDatePicker from '../../ui/ModernDatePicker';
+import PatientModal from '../../Modals/PatientModal';
 
 interface Patient {
     id: string;
@@ -44,6 +47,7 @@ const PatientDetails: React.FC<PatientDetailsProps> = ({
     newPatientCPF, setNewPatientCPF, newPatientPhone, setNewPatientPhone,
     formatPatientName, formatCPF, formatPhone, addToast
 }) => {
+    const [isPatientModalOpen, setIsPatientModalOpen] = useState(false);
     return (
         <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-slate-200 relative z-50">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide mb-3 flex items-center gap-2">
@@ -53,9 +57,20 @@ const PatientDetails: React.FC<PatientDetailsProps> = ({
 
             <div className="grid grid-cols-12 gap-4">
                 <div className="col-span-12 lg:col-span-8 space-y-1.5 relative z-[60]">
-                    <label className="text-xs font-bold text-slate-500 ml-1 uppercase tracking-wider flex items-center gap-2">
-                        Nome do Paciente
-                    </label>
+                    <div className="flex items-center justify-between px-1">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                            Nome do Paciente
+                        </label>
+                        {selectedPatient && (
+                            <button
+                                type="button"
+                                onClick={() => setIsPatientModalOpen(true)}
+                                className="flex items-center gap-1 text-[9px] font-black text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg transition-all uppercase tracking-tighter"
+                            >
+                                <Pencil size={10} /> Editar Cadastro
+                            </button>
+                        )}
+                    </div>
                     <div className="relative group">
                         <PatientSearchSelect
                             value={patientSearch}
@@ -128,7 +143,17 @@ const PatientDetails: React.FC<PatientDetailsProps> = ({
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">CPF</label>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">CPF</label>
+                                    <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(newPatientCPF, 'CPF', addToast)}
+                                        className="p-1 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
+                                        title="Copiar CPF"
+                                    >
+                                        <Copy size={12} />
+                                    </button>
+                                </div>
                                 <input
                                     type="text"
                                     placeholder="000.000.000-00"
@@ -139,7 +164,27 @@ const PatientDetails: React.FC<PatientDetailsProps> = ({
                                 />
                             </div>
                             <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">Telefone</label>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Telefone</label>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => copyToClipboard(newPatientPhone, 'Telefone', addToast)}
+                                            className="p-1 hover:bg-slate-100 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
+                                            title="Copiar Telefone"
+                                        >
+                                            <Copy size={12} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => openWhatsApp(newPatientPhone)}
+                                            className="p-1 hover:bg-emerald-50 rounded-md text-emerald-500 hover:text-emerald-600 transition-colors"
+                                            title="Abrir WhatsApp"
+                                        >
+                                            <MessageCircle size={14} />
+                                        </button>
+                                    </div>
+                                </div>
                                 <input
                                     type="text"
                                     placeholder="(00) 00000-0000"
@@ -167,6 +212,33 @@ const PatientDetails: React.FC<PatientDetailsProps> = ({
                     </div>
                 )}
             </div>
+            
+            <PatientModal
+                isOpen={isPatientModalOpen}
+                onClose={(updatedPatient) => {
+                    setIsPatientModalOpen(false);
+                    if (updatedPatient) {
+                        const formattedName = formatPatientName(updatedPatient.name);
+                        const [p1, p2] = (updatedPatient.phone || '').split(' / ');
+                        setPatientSearch(formattedName);
+                        setSelectedPatient({
+                            id: updatedPatient.id,
+                            name: formattedName,
+                            cpf: updatedPatient.cpf || '',
+                            phone: p1 || '',
+                            is_blocked: updatedPatient.is_blocked,
+                            birth_date: updatedPatient.birth_date,
+                            is_sus: updatedPatient.is_sus
+                        });
+                        setNewPatientCPF(updatedPatient.cpf || '');
+                        setNewPatientPhone(p1 || ''); // Use first phone for the main phone field
+                        if (updatedPatient.birth_date) {
+                            setBirthDate(updatedPatient.birth_date);
+                        }
+                    }
+                }}
+                patientId={selectedPatient?.id}
+            />
         </div>
     );
 };

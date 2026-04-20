@@ -50,6 +50,7 @@ import { ptBR } from 'date-fns/locale';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { includesNormalized } from '../../utils/string';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const ScaleManagement: React.FC = () => {
     const { addToast } = useToast();
@@ -73,7 +74,17 @@ const ScaleManagement: React.FC = () => {
     const [globalSearchQuery, setGlobalSearchQuery] = useState('');
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [isExportOpen, setIsExportOpen] = useState(false);
-
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { }
+    });
     // Export Logic
     // Consistent Colors for Specialties - Softer Teal/Mint Palette
     const getColorForSpecialty = (specialty: string): [number, number, number] => {
@@ -525,17 +536,25 @@ const ScaleManagement: React.FC = () => {
         }
     };
 
-    const handleDeleteSchedule = async (id: string) => {
-        if (!confirm('Deseja realmente excluir este horário da escala base?')) return;
-        try {
-            const { error } = await supabase.from('doctor_base_schedule').delete().eq('id', id);
-            if (error) throw error;
-            addToast('Horário removido.', 'success');
-            fetchInitialData();
-        } catch (err) {
-            console.error(err);
-            addToast('Erro ao remover horário.', 'error');
-        }
+    const handleDeleteSchedule = (id: string) => {
+        setConfirmModal({
+            isOpen: true,
+            title: 'Excluir Horário',
+            message: 'Deseja realmente excluir este horário da escala base? Esta ação não pode ser desfeita.',
+            onConfirm: async () => {
+                try {
+                    const { error } = await supabase.from('doctor_base_schedule').delete().eq('id', id);
+                    if (error) throw error;
+                    addToast('Horário removido.', 'success');
+                    fetchInitialData();
+                } catch (err) {
+                    console.error(err);
+                    addToast('Erro ao remover horário.', 'error');
+                } finally {
+                    setConfirmModal({ ...confirmModal, isOpen: false });
+                }
+            }
+        });
     };
 
     const getDoctorName = (id: string) => doctors.find(d => d.id === id)?.name || 'Médico não encontrado';
@@ -564,14 +583,18 @@ const ScaleManagement: React.FC = () => {
 
                     const doc = doctors.find(d => d.id === s.doctor_id);
                     const docName = (doc?.name || '');
-                    const specName = (specialties.find(sp => sp.id === doc?.especialidade_id)?.name || '');
+                    const specName = getDoctorSpecialty(s.doctor_id);
                     const rooms = (s.rooms || []).join(', ');
                     const observation = (s.observation || '');
 
-                    return includesNormalized(docName, query) ||
+                    return (includesNormalized(docName, query) ||
                         includesNormalized(specName, query) ||
                         includesNormalized(rooms, query) ||
-                        includesNormalized(observation, query);
+                        includesNormalized(observation, query));
+                }).sort((a, b) => {
+                    const roomA = (a.rooms && a.rooms[0]) || '';
+                    const roomB = (b.rooms && b.rooms[0]) || '';
+                    return roomA.localeCompare(roomB, undefined, { numeric: true });
                 });
             });
         });
@@ -1060,7 +1083,7 @@ const ScaleManagement: React.FC = () => {
                                                         <div className="flex flex-col">
                                                             <span className={`font-bold ${highlightedIndex === index ? 'text-teal-700' : 'text-slate-700'}`}>{d.name}</span>
                                                             <span className={`text-[10px] font-black uppercase tracking-wider ${highlightedIndex === index ? 'text-teal-600/70' : 'text-slate-400'}`}>
-                                                                {specialties.find(s => s.id === d.especialidade_id)?.name || 'Sem Especialidade'}
+                                                                {getDoctorSpecialty(d.id) || 'Sem Especialidade'}
                                                             </span>
                                                         </div>
                                                     </button>
@@ -1272,6 +1295,17 @@ const ScaleManagement: React.FC = () => {
                     </div>
                 </div>
             )}
+            
+            <ConfirmModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmText="Excluir"
+                cancelText="Cancelar"
+                type="danger"
+            />
         </div>
     );
 };

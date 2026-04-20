@@ -6,7 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import UserManagement from '../pages/Settings/UserManagement';
 import HistoryPage from '../pages/Settings/HistoryPage';
 import ProfileSettings from '../pages/Settings/ProfileSettings';
-import { LayoutGrid, Users, Stethoscope, Plus, Trash2, Edit2, Check, X, Tag, User as UserIcon, Loader2, History, UserCircle, List, Layout, Grid, Square, RefreshCw } from 'lucide-react';
+import { LayoutGrid, Users, Stethoscope, Plus, Trash2, Edit2, Check, X, Tag, User as UserIcon, Loader2, History, UserCircle, List, Layout, Grid, Square, RefreshCw, MessageCircle, AlertCircle } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import { format, parseISO, startOfMonth, addMonths, addDays, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -14,7 +14,7 @@ import { ptBR } from 'date-fns/locale';
 const Settings: React.FC = () => {
   const { addToast } = useToast();
   const { isAdmin, profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'profile' | 'clinical' | 'users' | 'history' | 'system'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'clinical' | 'users' | 'history' | 'system' | 'comunication'>('profile');
   const [medicos, setMedicos] = useState<Medico[]>([]);
   const [especialidades, setEspecialidades] = useState<Especialidade[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +24,8 @@ const Settings: React.FC = () => {
     (localStorage.getItem('doctorViewMode') as any) || 'list'
   );
   const [repairing, setRepairing] = useState(false);
+  const [clinicName, setClinicName] = useState('CIS - Centro Integrado de Saúde');
+  const [waitlistTemplate, setWaitlistTemplate] = useState('');
 
   const [newSpec, setNewSpec] = useState('');
   const [newSpecSusExclusive, setNewSpecSusExclusive] = useState(false);
@@ -42,6 +44,8 @@ const Settings: React.FC = () => {
   const [tempDocMaxAge, setTempDocMaxAge] = useState(100);
   const [tempDocCrm, setTempDocCrm] = useState('');
   const [tempDocPrefix, setTempDocPrefix] = useState('');
+  const [newDocAcceptsSus, setNewDocAcceptsSus] = useState(false);
+  const [tempDocAcceptsSus, setTempDocAcceptsSus] = useState(false);
 
   const [editingSpecId, setEditingSpecId] = useState<string | null>(null);
   const [tempSpecName, setTempSpecName] = useState('');
@@ -55,6 +59,7 @@ const Settings: React.FC = () => {
   const [tempSpecialtySearch, setTempSpecialtySearch] = useState('');
   const [showTempSpecialtyDropdown, setShowTempSpecialtyDropdown] = useState(false);
   const [activeTempSpecIndex, setActiveTempSpecIndex] = useState(-1);
+  const [specListSearch, setSpecListSearch] = useState('');
 
   // Filtragem memoizada de especialidades
   const filteredNewDocSpecialties = React.useMemo(() => {
@@ -64,6 +69,10 @@ const Settings: React.FC = () => {
   const filteredTempDocSpecialties = React.useMemo(() => {
     return especialidades.filter(e => e.name.toLowerCase().includes(tempSpecialtySearch.toLowerCase()));
   }, [especialidades, tempSpecialtySearch]);
+
+  const filteredSpecList = React.useMemo(() => {
+    return especialidades.filter(e => e.name.toLowerCase().includes(specListSearch.toLowerCase()));
+  }, [especialidades, specListSearch]);
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -84,27 +93,37 @@ const Settings: React.FC = () => {
 
   const fetchSystemSettings = async () => {
     try {
-      const { data, error } = await supabase.from('system_settings').select('*').eq('key', 'data_retention_days').maybeSingle();
-      if (data) setRetentionDays(parseInt(data.value));
+      const { data, error } = await supabase.from('system_settings').select('*');
+      if (data) {
+        const retention = data.find(s => s.key === 'data_retention_days');
+        const cName = data.find(s => s.key === 'clinic_name');
+        const wTemplate = data.find(s => s.key === 'whatsapp_template_vaga_disponivel');
+
+        if (retention) setRetentionDays(parseInt(retention.value));
+        if (cName) setClinicName(cName.value);
+        if (wTemplate) setWaitlistTemplate(wTemplate.value);
+      }
     } catch (err) {
       console.warn('System settings table might not exist yet.');
     }
   };
 
-  const saveRetentionDays = async () => {
+  const saveSystemSetting = async (key: string, value: string, toastMsg: string) => {
     try {
       const { error } = await supabase.from('system_settings').upsert({
-        key: 'data_retention_days',
-        value: retentionDays.toString(),
+        key,
+        value,
         updated_at: new Date().toISOString()
-      });
+      }, { onConflict: 'key' });
       if (error) throw error;
-      addToast('Configuração de retenção salva!', 'success');
+      addToast(toastMsg, 'success');
     } catch (err: any) {
       console.error(err);
-      addToast('Erro ao salvar. Verifique se a tabela system_settings existe.', 'error');
+      addToast(`Erro ao salvar: ${err.message || 'Verifique se a tabela system_settings existe.'}`, 'error');
     }
   };
+
+  const DEFAULT_WAITLIST_TEMPLATE = "Olá, falo em nome do {clinica}\n\nPaciente {paciente} deixou o nome na lista de espera para {especialidade}. Tivemos uma desistência com o médico {medico}, no dia {data} às {hora} horas. Tem interesse na consulta?";
 
   const handleManualCleanup = async () => {
     setCleaning(true);
@@ -321,8 +340,8 @@ const Settings: React.FC = () => {
           specialty_id: newDocSpecId,
           min_age: newDocMinAge,
           max_age: newDocMaxAge,
-          crm: newDocCrm.trim(),
-          accepts_sus: especialidades.find(e => e.id === newDocSpecId)?.is_sus_exclusive ?? false
+          crm: newDocCrm.trim() || null,
+          accepts_sus: newDocAcceptsSus
         }])
         .select()
         .single();
@@ -340,6 +359,7 @@ const Settings: React.FC = () => {
         }]);
         setNewDocName('');
         setNewDocSpecId('');
+        setNewDocAcceptsSus(false);
         setNewDocMinAge(0);
         setNewDocMaxAge(100);
         setNewDocCrm('');
@@ -353,23 +373,49 @@ const Settings: React.FC = () => {
     }
   };
 
-  const handleDeleteMedico = (id: string) => {
-    setConfirmModal({
-      isOpen: true,
-      title: 'Remover Médico',
-      message: 'Tem certeza que deseja remover este médico do corpo clínico?',
-      onConfirm: async () => {
-        try {
-          const { error } = await supabase.from('doctors').delete().eq('id', id);
-          if (error) throw error;
-          setMedicos(prev => prev.filter(m => m.id !== id));
-          addToast('Médico removido.', 'success');
-        } catch (error) {
-          console.error('Erro ao remover médico:', error);
-          addToast('Erro ao remover médico.', 'error');
-        }
+  const handleDeleteMedico = async (id: string) => {
+    try {
+      // 1. Verificar se existem agendamentos vinculados
+      const { count: aptCount, error: aptError } = await supabase
+        .from('appointments')
+        .select('*', { count: 'exact', head: true })
+        .eq('doctor_id', id);
+
+      if (aptError) throw aptError;
+
+      // 2. Verificar se existem planos de tratamento vinculados
+      const { count: planCount, error: planError } = await supabase
+        .from('treatment_plans')
+        .select('*', { count: 'exact', head: true })
+        .eq('doctor_id', id);
+
+      if (planError) throw planError;
+
+      if ((aptCount && aptCount > 0) || (planCount && planCount > 0)) {
+        addToast(`Não é possível excluir: Este médico possui ${aptCount || 0} agendamentos e ${planCount || 0} planos vinculados.`, 'warning');
+        return;
       }
-    });
+
+      setConfirmModal({
+        isOpen: true,
+        title: 'Remover Médico',
+        message: 'Tem certeza que deseja remover este médico do corpo clínico?',
+        onConfirm: async () => {
+          try {
+            const { error } = await supabase.from('doctors').delete().eq('id', id);
+            if (error) throw error;
+            setMedicos(prev => prev.filter(m => m.id !== id));
+            addToast('Médico removido com sucesso.', 'success');
+          } catch (error) {
+            console.error('Erro ao remover médico:', error);
+            addToast('Erro técnico ao remover médico.', 'error');
+          }
+        }
+      });
+    } catch (error: any) {
+      console.error('Erro na verificação de exclusão:', error);
+      addToast('Erro ao verificar dependências do médico.', 'error');
+    }
   };
 
   const startEditingDoc = (doc: Medico) => {
@@ -379,6 +425,9 @@ const Settings: React.FC = () => {
     setTempDocMinAge(doc.min_age || 0);
     setTempDocMaxAge(doc.max_age || 100);
     setTempDocCrm(doc.crm || '');
+    setTempDocAcceptsSus(doc.accepts_sus || false);
+    const prefix = doc.name.split(' ')[0];
+    setTempDocPrefix(['Dr.', 'Dra.', 'Dr(a).'].includes(prefix) ? prefix : '');
     setTempSpecialtySearch(especialidades.find(e => e.id === doc.especialidade_id)?.name || '');
   };
 
@@ -414,6 +463,15 @@ const Settings: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (newDocSpecId) {
+      const spec = especialidades.find(e => e.id === newDocSpecId);
+      if (spec) {
+        setNewDocAcceptsSus(spec.is_sus_exclusive);
+      }
+    }
+  }, [newDocSpecId, especialidades]);
+
   const saveDocEdit = async () => {
     if (!tempDocName.trim() || !editingDocId || !tempDocSpecId) return;
 
@@ -427,8 +485,8 @@ const Settings: React.FC = () => {
           specialty_id: tempDocSpecId,
           min_age: tempDocMinAge,
           max_age: tempDocMaxAge,
-          crm: tempDocCrm.trim(),
-          accepts_sus: especialidades.find(e => e.id === tempDocSpecId)?.is_sus_exclusive ?? false
+          crm: tempDocCrm.trim() || null,
+          accepts_sus: tempDocAcceptsSus
         })
         .eq('id', editingDocId);
 
@@ -441,7 +499,7 @@ const Settings: React.FC = () => {
         min_age: tempDocMinAge,
         max_age: tempDocMaxAge,
         crm: tempDocCrm.trim(),
-        accepts_sus: especialidades.find(e => e.id === tempDocSpecId)?.is_sus_exclusive ?? false
+        accepts_sus: tempDocAcceptsSus
       } : m));
       setEditingDocId(null);
       addToast('Dados do médico atualizados.', 'success');
@@ -519,6 +577,16 @@ const Settings: React.FC = () => {
               >
                 <Users size={16} />
                 Usuários
+              </button>
+              <button
+                onClick={() => setActiveTab('comunication')}
+                className={`flex items-center justify-center gap-2 px-3 py-3 md:px-5 md:py-2.5 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'comunication'
+                  ? 'bg-white text-teal-600 shadow-xl shadow-teal-900/5 ring-1 ring-slate-200/50'
+                  : 'text-slate-400 hover:text-slate-600 hover:bg-white/50'
+                  }`}
+              >
+                <MessageCircle size={16} />
+                Comunicações
               </button>
               <button
                 onClick={() => setActiveTab('system')}
@@ -599,9 +667,31 @@ const Settings: React.FC = () => {
                 </form>
               </div>
 
+              {/* Specialty Search Bar */}
+              <div className="px-5 py-3 bg-slate-50/50 border-b border-slate-50">
+                <div className="relative">
+                  <Tag className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    placeholder="Buscar especialidade..."
+                    value={specListSearch}
+                    onChange={(e) => setSpecListSearch(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 placeholder:text-slate-400 focus:ring-4 focus:ring-teal-500/5 focus:border-teal-400 outline-none transition-all shadow-sm uppercase tracking-tight"
+                  />
+                  {specListSearch && (
+                    <button
+                      onClick={() => setSpecListSearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div className="flex-1 overflow-y-auto">
                 <ul className="divide-y divide-slate-50">
-                  {especialidades.length > 0 ? especialidades.map(e => (
+                  {filteredSpecList.length > 0 ? filteredSpecList.map(e => (
                     <li key={e.id} className="px-5 py-3.5 flex items-center justify-between hover:bg-slate-50/50 transition-colors group">
                       {editingSpecId === e.id ? (
                         <div className="flex-1 flex flex-col gap-3 pr-2">
@@ -792,9 +882,9 @@ const Settings: React.FC = () => {
                   </div>
 
                   {/* Linha 3: Rodapé com Faixa Etária e Botão */}
-                  <div className="flex flex-wrap items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <div className="flex-1 flex items-center gap-4">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-fit">Faixa de Atendimento:</span>
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6 bg-slate-50 p-5 rounded-2xl border border-slate-100 items-end">
+                    <div className="md:col-span-6 space-y-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Faixa de Atendimento:</span>
                       <div className="flex items-center gap-2">
                         <input
                           type="number"
@@ -802,29 +892,45 @@ const Settings: React.FC = () => {
                           value={newDocMinAge}
                           min="0"
                           onChange={(e) => setNewDocMinAge(parseInt(e.target.value) || 0)}
-                          className="w-20 px-3 py-1.5 border border-slate-200 rounded-lg text-center text-xs font-bold focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
+                          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-center text-xs font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all transition-all bg-white"
                         />
-                        <span className="text-slate-400 font-medium">até</span>
+                        <span className="text-slate-400 font-medium text-xs">até</span>
                         <input
                           type="number"
                           placeholder="Max"
                           value={newDocMaxAge}
                           min="0"
                           onChange={(e) => setNewDocMaxAge(parseInt(e.target.value) || 100)}
-                          className="w-20 px-3 py-1.5 border border-slate-200 rounded-lg text-center text-xs font-bold focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
+                          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-center text-xs font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all transition-all bg-white"
                         />
-                        <span className="text-[10px] text-slate-400 font-black tracking-widest">ANOS</span>
+                        <span className="text-[10px] text-slate-400 font-black tracking-widest ml-1">ANOS</span>
                       </div>
                     </div>
 
-                    <button
-                      type="submit"
-                      disabled={!newDocName.trim() || !newDocSpecId}
-                      className="bg-indigo-600 text-white px-10 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-900/10 disabled:opacity-50 ml-auto flex items-center gap-2"
-                    >
-                      <Plus size={16} />
-                      SALVAR MÉDICO
-                    </button>
+                    <div className="md:col-span-3 space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Modalidade</label>
+                      <button
+                        type="button"
+                        onClick={() => setNewDocAcceptsSus(!newDocAcceptsSus)}
+                        className={`w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl border transition-all ${newDocAcceptsSus ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white border-slate-200 text-slate-400 hover:border-blue-400 hover:text-blue-600'}`}
+                      >
+                        <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-all ${newDocAcceptsSus ? 'border-white bg-white' : 'border-slate-300'}`}>
+                          {newDocAcceptsSus && <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-widest leading-none">Atende SUS</span>
+                      </button>
+                    </div>
+
+                    <div className="md:col-span-3">
+                      <button
+                        type="submit"
+                        disabled={!newDocName.trim() || !newDocSpecId}
+                        className="w-full bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-900/10 disabled:opacity-50 flex items-center justify-center gap-2 h-[42px]"
+                      >
+                        <Plus size={16} />
+                        SALVAR MÉDICO
+                      </button>
+                    </div>
                   </div>
                 </form>
               </div>
@@ -966,44 +1072,57 @@ const Settings: React.FC = () => {
                           </div>
 
                           {/* Linha 3: Faixa Etária e Ações - Edição */}
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3 bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-100 flex-1">
-                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest min-w-fit">Atendimento:</span>
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 bg-slate-50 p-5 rounded-2xl border border-slate-100 items-end mt-2">
+                            {/* Faixa Etária */}
+                            <div className="md:col-span-5 space-y-2">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Faixa de Atendimento:</span>
                               <div className="flex items-center gap-2">
                                 <input
                                   type="number"
                                   value={tempDocMinAge}
-                                  min="0"
-                                  onChange={e => setTempDocMinAge(parseInt(e.target.value) || 0)}
-                                  className="w-14 bg-white border border-slate-200 rounded text-[10px] font-black text-center focus:ring-2 focus:ring-indigo-500/20 p-1"
+                                  onChange={(e) => setTempDocMinAge(parseInt(e.target.value) || 0)}
+                                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-center text-xs font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all bg-white"
                                 />
-                                <span className="text-[9px] text-slate-400 font-bold uppercase">até</span>
+                                <span className="text-slate-400 font-medium text-xs">até</span>
                                 <input
                                   type="number"
                                   value={tempDocMaxAge}
-                                  min="0"
-                                  onChange={e => setTempDocMaxAge(parseInt(e.target.value) || 100)}
-                                  className="w-14 bg-white border border-slate-200 rounded text-[10px] font-black text-center focus:ring-2 focus:ring-indigo-500/20 p-1"
+                                  onChange={(e) => setTempDocMaxAge(parseInt(e.target.value) || 100)}
+                                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-center text-xs font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all bg-white"
                                 />
-                                <span className="text-[9px] text-slate-400 font-black uppercase">Anos</span>
+                                <span className="text-[10px] text-slate-400 font-black tracking-widest ml-1">ANOS</span>
                               </div>
                             </div>
 
-                            <div className="flex gap-2">
+                            {/* Atende SUS Toggle */}
+                            <div className="md:col-span-3 space-y-2">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Modalidade</label>
                               <button
-                                onClick={saveDocEdit}
-                                className="p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-900/20 transition-all active:scale-90 flex items-center gap-2 px-4"
-                                title="Salvar Alterações"
+                                type="button"
+                                onClick={() => setTempDocAcceptsSus(!tempDocAcceptsSus)}
+                                className={`w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl border transition-all ${tempDocAcceptsSus ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white border-slate-200 text-slate-400 hover:border-blue-400 hover:text-blue-600'}`}
                               >
-                                <Check size={18} />
-                                <span className="hidden sm:inline text-[10px] font-black uppercase tracking-wider">Salvar</span>
+                                <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-all ${tempDocAcceptsSus ? 'border-white bg-white' : 'border-slate-300'}`}>
+                                  {tempDocAcceptsSus && <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
+                                </div>
+                                <span className="text-[10px] font-black uppercase tracking-widest leading-none">Aceita SUS</span>
+                              </button>
+                            </div>
+
+                            {/* Botões de Ação */}
+                            <div className="md:col-span-4 flex items-center gap-2">
+                              <button
+                                onClick={() => saveDocEdit()}
+                                className="flex-1 bg-indigo-600 text-white px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-900/10 h-[42px]"
+                              >
+                                <Check size={16} />
+                                Salvar
                               </button>
                               <button
                                 onClick={() => setEditingDocId(null)}
-                                className="p-2.5 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 transition-all"
-                                title="Cancelar"
+                                className="p-3 bg-slate-100 text-slate-500 rounded-xl hover:bg-rose-50 hover:text-rose-600 transition-all h-[42px] flex items-center justify-center"
                               >
-                                <X size={18} />
+                                <X size={16} />
                               </button>
                             </div>
                           </div>
@@ -1013,8 +1132,8 @@ const Settings: React.FC = () => {
                           <div className="flex flex-col">
                             <div className="flex items-center gap-2">
                               <span className="font-bold text-slate-800 text-sm tracking-tight">{m.name}</span>
-                              {especialidades.find(e => e.id === m.especialidade_id)?.is_sus_exclusive ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[8px] font-black bg-blue-50 text-blue-600 border border-blue-100 uppercase tracking-tighter">Encaminhamento UBS</span>
+                              {m.accepts_sus ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[8px] font-black bg-blue-50 text-blue-600 border border-blue-100 uppercase tracking-tighter">Atende SUS</span>
                               ) : (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[8px] font-black bg-amber-50 text-amber-600 border border-amber-100 uppercase tracking-tighter">Livre Demanda</span>
                               )}
@@ -1062,6 +1181,114 @@ const Settings: React.FC = () => {
                 </ul>
               </div>
             </div>
+          </section>
+        </div>
+      ) : activeTab === 'comunication' ? (
+        <div key="comunication-tab" className="max-w-4xl mx-auto custom-fade-in space-y-8 pb-10">
+          <section className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4 duration-500">
+            <div className="p-8 border-b border-slate-100 flex items-center gap-4 bg-slate-50/50">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-inner">
+                <MessageCircle size={24} />
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-slate-900 tracking-tight">Canais de Comunicação</h2>
+                <p className="text-sm text-slate-500 font-medium">Configure as mensagens automáticas do WhatsApp</p>
+              </div>
+            </div>
+
+            <div className="p-8 space-y-10">
+              {/* Nome da Clínica */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Identificação da Clínica</label>
+                    <p className="text-[10px] text-slate-500 font-medium ml-1">Nome que aparecerá na variável {'{clinica}'}</p>
+                  </div>
+                  <button 
+                    onClick={() => saveSystemSetting('clinic_name', clinicName, 'Nome da clínica salvo!')}
+                    className="bg-slate-900 text-white px-6 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg active:scale-95"
+                  >
+                    Salvar Nome
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={clinicName}
+                  onChange={(e) => setClinicName(e.target.value)}
+                  placeholder="Ex: CIS - Centro Integrado de Saúde"
+                  className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all font-bold text-slate-800 shadow-inner"
+                />
+              </div>
+
+              <div className="h-px bg-slate-100" />
+
+              {/* Template: Vaga Disponível */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Mensagem: Vaga Disponível (Fila)</label>
+                    <p className="text-[10px] text-slate-500 font-medium ml-1">Disparada ao avisar pacientes sobre desistências</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => setWaitlistTemplate(DEFAULT_WAITLIST_TEMPLATE)}
+                      className="bg-slate-100 text-slate-500 px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all"
+                    >
+                      Padrão
+                    </button>
+                    <button 
+                      onClick={() => saveSystemSetting('whatsapp_template_vaga_disponivel', waitlistTemplate, 'Template de mensagem salvo!')}
+                      className="bg-emerald-600 text-white px-6 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-900/10 active:scale-95"
+                    >
+                      Salvar Template
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="relative group">
+                  <textarea
+                    value={waitlistTemplate}
+                    onChange={(e) => setWaitlistTemplate(e.target.value)}
+                    rows={6}
+                    placeholder="Escreva sua mensagem aqui..."
+                    className="w-full px-5 py-5 border-2 border-slate-100 rounded-3xl focus:border-emerald-500/50 focus:ring-8 focus:ring-emerald-500/5 outline-none transition-all font-medium text-slate-700 leading-relaxed shadow-inner resize-none"
+                  />
+                  
+                  {/* Legend/Placeholders */}
+                  <div className="mt-4 bg-slate-50 rounded-2xl p-5 border border-slate-100 grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <h4 className="col-span-full text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Variáveis Disponíveis:</h4>
+                    {[
+                      { key: '{paciente}', desc: 'Nome do Paciente' },
+                      { key: '{especialidade}', desc: 'Especialidade' },
+                      { key: '{medico}', desc: 'Nome do Médico' },
+                      { key: '{data}', desc: 'Data (Hoje)' },
+                      { key: '{hora}', desc: 'Horário do Agendamento' },
+                      { key: '{clinica}', desc: 'Nome da Clínica' },
+                    ].map(item => (
+                      <div key={item.key} className="flex flex-col gap-0.5">
+                        <code className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded w-fit">{item.key}</code>
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{item.desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="bg-amber-50 rounded-2xl p-6 border border-amber-100">
+             <div className="flex gap-4">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 shrink-0">
+                  <AlertCircle size={20} />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-amber-900 uppercase tracking-widest mb-1">Dica de Formatação</h4>
+                  <p className="text-[11px] text-amber-700 leading-relaxed font-medium">
+                    O WhatsApp aceita formatação simples: use <b>*texto*</b> para negrito e <b>_texto_</b> para itálico. 
+                    As quebras de linha que você digitar no campo acima serão preservadas na mensagem enviada.
+                  </p>
+                </div>
+             </div>
           </section>
         </div>
       ) : activeTab === 'system' ? (
@@ -1134,7 +1361,7 @@ const Settings: React.FC = () => {
                   </div>
                 </label>
                 <button
-                  onClick={saveRetentionDays}
+                  onClick={() => saveSystemSetting('data_retention_days', retentionDays.toString(), 'Configuração de retenção salva!')}
                   className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg active:scale-95"
                 >
                   Salvar Política

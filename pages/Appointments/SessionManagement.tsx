@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import {
@@ -40,6 +40,7 @@ import { ptBR } from 'date-fns/locale';
 import FinancialControlModal from '../../components/Modals/FinancialControlModal';
 import AppointmentModal from '../../components/Modals/AppointmentModal';
 import ModernDatePicker from '../../components/ui/ModernDatePicker';
+import PatientUpcomingAppointments from '../../components/PatientUpcomingAppointments';
 
 interface EnhancedPlan extends TreatmentPlan {
     sessions?: TherapySession[];
@@ -148,13 +149,15 @@ const fixOrphans = async (appointments: Appointment[], plans: EnhancedPlan[], ad
 
 
 // --- CLEANUP EXCEEDED SESSIONS ---
-const cleanupExceededSessions = async (plans: EnhancedPlan[], appointmentsHistory: Appointment[], addToast: any) => {
+const cleanupExceededSessions = async (plans: EnhancedPlan[], appointmentsHistory: Appointment[], addToast: any, singlePlanId?: string) => {
     try {
         const toDelete: string[] = [];
         let plansAffected = 0;
         let deletedCount = 0; // For auto-cancelled plans
 
-        for (const plan of plans) {
+        const plansToProcess = singlePlanId ? plans.filter(p => p.id === singlePlanId) : plans;
+
+        for (const plan of plansToProcess) {
             // Get all physical appointments for THIS plan from history (all dates), ignoring Avaliações
             const physicalApts = appointmentsHistory
                 .filter(a => a.treatment_plan_id === plan.id && a.attendance_status !== 'cancelled');
@@ -467,6 +470,8 @@ const SessionManagement: React.FC = () => {
     const [selectedSlot, setSelectedSlot] = useState<{ plan: EnhancedPlan; date: Date } | null>(null);
     const [isRescheduling, setIsRescheduling] = useState(false);
     const [rescheduleDate, setRescheduleDate] = useState('');
+    const [rescheduleTime, setRescheduleTime] = useState('');
+    const [hasConflict, setHasConflict] = useState(false);
     const [financialModalOpen, setFinancialModalOpen] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState('');
     const [sessionPrice, setSessionPrice] = useState('');
@@ -476,6 +481,7 @@ const SessionManagement: React.FC = () => {
         planId: null,
         action: 'delete'
     });
+
 
 
 
@@ -522,7 +528,7 @@ const SessionManagement: React.FC = () => {
     const [selectedApts, setSelectedApts] = useState<string[]>([]);
     const [isBulkRescheduleModalOpen, setIsBulkRescheduleModalOpen] = useState(false);
     const [bulkRescheduleDate, setBulkRescheduleDate] = useState('');
-    const [blockedDates, setBlockedDates] = useState<{ id: string, date: string, reason: string }[]>([]);
+    const [blockedDates, setBlockedDates] = useState<{ id: string, date: string, reason: string, doctor_id?: string | null }[]>([]);
     const [isBlockingModalOpen, setIsBlockingModalOpen] = useState(false);
     const [dateToBlock, setDateToBlock] = useState<Date | null>(null);
     const [blockReason, setBlockReason] = useState('');
@@ -535,71 +541,59 @@ const SessionManagement: React.FC = () => {
         setCollapsedDays(prev => ({ ...prev, [dayKey]: !prev[dayKey] }));
     };
 
-    const closeModal = () => {
+    const closeModal = useCallback(() => {
         setSelectedSlot(null);
         setPaymentAmount('');
         setIsEditModalOpen(false);
         setEditModeData(null);
-    };
+        setIsRescheduling(false);
+    }, []);
 
-    // Global ESC handler for all modais in this page
-    // --- Close All Modals (Backdrop Click) ---
-    const closeAllModals = () => {
+    const closeAllModals = useCallback(() => {
         setConfirmModal({ isOpen: false, planId: null });
         setFinancialModalOpen(false);
         setIsBlockingModalOpen(false);
         setIsHistoryModalOpen(false);
         setIsBulkRescheduleModalOpen(false);
         setBulkRescheduleDate('');
-        // Close Session/Edit Modals
         closeModal();
-    };
+    }, [closeModal]);
 
     // --- LIFO ESC Handler ---
     // Closes the top-most modal first
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
-                // Priority 1: Confirm Modal
-                // Note: ConfirmModal component now handles its own ESC to close itself.
-                // We just need to ensure we don't close others if Confirm is open.
-                if (confirmModal.isOpen) {
-                    // Let ConfirmModal handle it. If we need to sync state, ConfirmModal calls onClose which updates state.
-                    return;
-                }
+                // Priority 1: Confirm Modal (managed by ConfirmModal itself)
+                if (confirmModal.isOpen) return;
 
-                // Priority 2: Financial / Blocking / History Modals
-                if (financialModalOpen) {
-                    setFinancialModalOpen(false);
-                    return;
-                }
-                if (isBlockingModalOpen) {
-                    setIsBlockingModalOpen(false);
-                    return;
-                }
-                if (isHistoryModalOpen) {
-                    setIsHistoryModalOpen(false);
-                    return;
-                }
+                // Priority 2: Full-screen Modals
+                if (financialModalOpen) { setFinancialModalOpen(false); return; }
+                if (isBlockingModalOpen) { setIsBlockingModalOpen(false); return; }
+                if (isHistoryModalOpen) { setIsHistoryModalOpen(false); return; }
+                if (isBulkRescheduleModalOpen) { setIsBulkRescheduleModalOpen(false); return; }
 
-                // Priority 3: Edit Appointment Modal (handled by AppointmentModal component usually? No, it's inline conditionally)
-                // AppointmentModal has its own ESC listener? Yes.
-                if (isEditModalOpen) {
-                    // AppointmentModal handles itself.
-                    return;
-                }
+                // Priority 3: Edit Appointment Modal (managed by AppointmentModal itself)
+                if (isEditModalOpen) return;
 
-                // Priority 4: Session Details Modal (Inline)
+                // Priority 4: Session Details Panel
                 if (selectedSlot) {
-                    setSelectedSlot(null);
+                    if (isRescheduling) setIsRescheduling(false);
+                    else setSelectedSlot(null);
                     return;
                 }
             }
         };
 
-        window.addEventListener('keydown', handleKeyDown);
+        const isAnyModalOpen = confirmModal.isOpen || financialModalOpen || isBlockingModalOpen || 
+                             isHistoryModalOpen || isEditModalOpen || selectedSlot || isBulkRescheduleModalOpen;
+
+        if (isAnyModalOpen) {
+            window.addEventListener('keydown', handleKeyDown);
+        }
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [confirmModal.isOpen, financialModalOpen, isBlockingModalOpen, isHistoryModalOpen, isEditModalOpen, selectedSlot]);
+    }, [confirmModal.isOpen, financialModalOpen, isBlockingModalOpen, isHistoryModalOpen, 
+        isEditModalOpen, selectedSlot, isBulkRescheduleModalOpen, isRescheduling]);
 
     // --- Constants ---
     const dayNames = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
@@ -748,7 +742,9 @@ const SessionManagement: React.FC = () => {
                     allocations:payment_allocations(amount, payment:therapy_payments(payment_method))
                 `)
                 .gte('date', fetchStart.toISOString())
-                .lte('date', fetchEnd.toISOString());
+                .lte('date', fetchEnd.toISOString())
+                .neq('status', 'waiting_sus')
+                .neq('status', 'cancelled');
 
             if (error) throw error;
             
@@ -759,22 +755,7 @@ const SessionManagement: React.FC = () => {
 
             setAppointments(filteredApts as any || []);
 
-            // --- Proactive SUS Sync ---
-            const patientsToSync = new Set<string>();
-            (data || []).forEach((apt: any) => {
-                const planIsSus = apt.treatment_plans?.is_sus || apt.is_sus;
-                const patientIsSus = apt.patient?.is_sus;
-                if (planIsSus && !patientIsSus && apt.patient_id) {
-                    patientsToSync.add(apt.patient_id);
-                }
-            });
 
-            if (patientsToSync.size > 0) {
-                console.log(`Proactively syncing SUS status for ${patientsToSync.size} patients...`);
-                supabase.from('patients').update({ is_sus: true }).in('id', Array.from(patientsToSync)).then(({ error }) => {
-                    if (!error) console.log('Proactive SUS sync complete.');
-                });
-            }
         } catch (error: any) {
             console.error('Error fetching appointments:', error);
             if (error.message?.includes('JWT expired')) {
@@ -884,7 +865,8 @@ const SessionManagement: React.FC = () => {
         try {
             const { error } = await supabase.from('blocked_dates').insert([{
                 date: format(dateToBlock, 'yyyy-MM-dd'),
-                reason: blockReason
+                reason: blockReason,
+                doctor_id: selectedDoctorId === 'all' ? null : selectedDoctorId
             }]);
             if (error) throw error;
             addToast('Data bloqueada com sucesso.', 'success');
@@ -995,25 +977,32 @@ const SessionManagement: React.FC = () => {
         // Filter history for this plan
         const planHistory = appointmentsHistory.filter(a => a.treatment_plan_id === planId);
 
-        // Filter out cancelled sessions (attendance_status = 'cancelled' OR status = 'cancelled')
-        // We want to count: scheduled, completed, attended, missed, justified
-        const validSessions = planHistory.filter(a => {
+        // Group by day to prevent duplicates from artificially inflating the session count in the UI badge (e.g. 11/10)
+        // We count each day with at least one valid (non-cancelled, non-evaluation) session as one session.
+        const sessionsByDay = new Map<string, string>(); // Day -> Status
+        
+        planHistory.forEach(a => {
             const isCancelled = a.attendance_status === 'cancelled' || a.status === 'cancelled';
             const isEvaluation = a.type === 'Avaliação';
-            return !isCancelled && !isEvaluation;
+            if (!isCancelled && !isEvaluation) {
+                const dayStr = format(parseISO(a.date), 'yyyy-MM-dd');
+                // We prefer 'attended' sessions in our map if multiple exist, but any valid session counts.
+                if (!sessionsByDay.has(dayStr) || a.attendance_status === 'attended') {
+                    sessionsByDay.set(dayStr, a.attendance_status || 'scheduled');
+                }
+            }
         });
 
-        // Sort by date (already sorted by fetch, but safety first)
-        validSessions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        // Convert back to array and sort by date
+        const validSessions = Array.from(sessionsByDay.keys()).sort();
 
-        // Find index of current date
-        const index = validSessions.findIndex(a => isSameDay(parseISO(a.date), currentDate));
+        // Convert currentDate to day string for finding the index
+        const currentDayStr = format(currentDate, 'yyyy-MM-dd');
+        const index = validSessions.indexOf(currentDayStr);
 
         if (index === -1) {
-            // If the session is not in history (e.g. ghost session projected by schedule_days but not physically created yet),
-            // we estimate its position.
-            // Count how many valid sessions are BEFORE this date
-            const countBefore = validSessions.filter(a => new Date(a.date) < currentDate).length;
+            // If the session is not in history (projection), estimate its position
+            const countBefore = validSessions.filter(date => date < currentDayStr).length;
             return countBefore + 1;
         }
 
@@ -1036,11 +1025,10 @@ const SessionManagement: React.FC = () => {
 
             const { data: existingApts } = await supabase
                 .from('appointments')
-                .select('id')
+                .select('id, status, attendance_status')
                 .eq('treatment_plan_id', planId)
                 .gte('date', startOfReq.toISOString())
                 .lte('date', endOfReq.toISOString())
-                .neq('status', 'cancelled')
                 .limit(1);
 
             const existingApt = existingApts?.[0];
@@ -1732,7 +1720,7 @@ const SessionManagement: React.FC = () => {
     };
 
     const executeBulkExceeded = async () => {
-        const success = await cleanupExceededSessions(plans, appointmentsHistory, addToast);
+        const success = await cleanupExceededSessions(plans, appointmentsHistory, addToast, confirmModal.planId || undefined);
         if (success) {
             fetchPlans();
             fetchAppointments();
@@ -1798,14 +1786,16 @@ const SessionManagement: React.FC = () => {
                                                 if (plan) setSelectedSlot({ plan, date: parseISO(apt.date) });
                                             }}
                                             className={`w-full text-left px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all flex items-center gap-2 group/apt ${apt.attendance_status === 'attended' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                                                (apt.attendance_status === 'missed' || apt.attendance_status === 'justified') ? 'bg-rose-50 text-rose-700 border-rose-100' :
-                                                    isOfficial ? 'bg-indigo-50/50 text-slate-700 border-indigo-100' :
-                                                        'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                                                apt.attendance_status === 'missed' ? 'bg-rose-50 text-rose-700 border-rose-100' :
+                                                    apt.attendance_status === 'justified' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                                        isOfficial ? 'bg-indigo-50/50 text-slate-700 border-indigo-100' :
+                                                            'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
                                                 }`}
                                         >
                                             <div className={`w-1.5 h-1.5 shrink-0 rounded-full ${apt.attendance_status === 'attended' ? 'bg-emerald-500' :
-                                                (apt.attendance_status === 'missed' || apt.attendance_status === 'justified') ? 'bg-rose-500' :
-                                                    isOfficial ? 'bg-indigo-500' : 'bg-indigo-400'
+                                                apt.attendance_status === 'missed' ? 'bg-rose-500' :
+                                                    apt.attendance_status === 'justified' ? 'bg-amber-500' :
+                                                        isOfficial ? 'bg-indigo-500' : 'bg-indigo-400'
                                                 }`} />
 
                                             <div className="flex items-center gap-1 flex-1 min-w-0">
@@ -1862,7 +1852,7 @@ const SessionManagement: React.FC = () => {
                             </div>
                             <div className="flex items-center justify-center gap-2">
                                 <p className={`text-lg font-black ${isSameDay(day, new Date()) ? 'text-indigo-600' : 'text-slate-900'}`}>{format(day, 'dd')}</p>
-                                {blockedDates.some(b => b.date === format(day, 'yyyy-MM-dd')) && (
+                                {blockedDates.some(b => b.date === format(day, 'yyyy-MM-dd') && (b.doctor_id === null || (selectedDoctorId !== 'all' && b.doctor_id === selectedDoctorId))) && (
                                     <LockIcon size={12} className="text-rose-500 fill-rose-50" />
                                 )}
                             </div>
@@ -1870,7 +1860,10 @@ const SessionManagement: React.FC = () => {
                             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
                                 <button
                                     onClick={() => {
-                                        const block = blockedDates.find(b => b.date === format(day, 'yyyy-MM-dd'));
+                                        const block = blockedDates.find(b => 
+                                            b.date === format(day, 'yyyy-MM-dd') && 
+                                            (b.doctor_id === null || (selectedDoctorId !== 'all' && b.doctor_id === selectedDoctorId))
+                                        );
                                         if (block) {
                                             if (window.confirm('Deseja remover o bloqueio desta data?')) {
                                                 handleUnblockDate(block.id);
@@ -1881,9 +1874,9 @@ const SessionManagement: React.FC = () => {
                                         }
                                     }}
                                     className={`p-1.5 rounded-xl border-2 transition-all shadow-lg flex items-center gap-1 active:scale-90 bg-white ${blockedDates.some(b => b.date === format(day, 'yyyy-MM-dd')) ? 'border-rose-100 text-rose-500 hover:bg-rose-600 hover:text-white hover:border-rose-600' : 'border-slate-100 text-slate-400 hover:bg-slate-900 hover:text-white hover:border-slate-900'}`}
-                                    title={blockedDates.some(b => b.date === format(day, 'yyyy-MM-dd')) ? "Remover bloqueio" : "Bloquear esta data"}
+                                title={blockedDates.some(b => b.date === format(day, 'yyyy-MM-dd') && (b.doctor_id === null || (selectedDoctorId !== 'all' && b.doctor_id === selectedDoctorId))) ? "Remover bloqueio" : "Bloquear esta data"}
                                 >
-                                    {blockedDates.some(b => b.date === format(day, 'yyyy-MM-dd')) ? <UnlockIcon size={14} /> : <LockIcon size={14} />}
+                                    {blockedDates.some(b => b.date === format(day, 'yyyy-MM-dd') && (b.doctor_id === null || (selectedDoctorId !== 'all' && b.doctor_id === selectedDoctorId))) ? <UnlockIcon size={14} /> : <LockIcon size={14} />}
                                 </button>
                                 <button
                                     onClick={() => navigate('/agendamentos', { state: { action: 'new', targetTab: 'sessao', preSelectedDate: format(day, 'yyyy-MM-dd'), returnTo: '/agendamentos/sessoes', selectedDoctorId: selectedDoctorId } })}
@@ -1966,7 +1959,10 @@ const SessionManagement: React.FC = () => {
                                 return timeA.localeCompare(timeB);
                             });
 
-                            const blockedInfo = blockedDates.find(b => b.date === format(day, 'yyyy-MM-dd'));
+                            const blockedInfo = blockedDates.find(b => 
+                                b.date === format(day, 'yyyy-MM-dd') && 
+                                (b.doctor_id === null || (selectedDoctorId !== 'all' && b.doctor_id === selectedDoctorId))
+                            );
 
                             return (
                                 <div key={day.toString()} className={`border-r border-slate-100 last:border-0 p-2 space-y-2 relative ${isSameDay(day, new Date()) ? 'bg-indigo-50/20' : ''}`}>
@@ -1975,7 +1971,9 @@ const SessionManagement: React.FC = () => {
                                             <div className="w-8 h-8 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mb-1.5 shadow-sm border border-rose-200">
                                                 <LockIcon size={16} />
                                             </div>
-                                            <p className="text-[10px] font-black text-rose-700 uppercase tracking-[0.2em] mb-0.5">Data Bloqueada</p>
+                                            <p className="text-[10px] font-black text-rose-700 uppercase tracking-[0.2em] mb-0.5">
+                                                {blockedInfo.doctor_id ? `${allDoctors.find(d => d.id === blockedInfo.doctor_id)?.name.split(' ')[0]} Bloqueado` : 'Data Bloqueada'}
+                                            </p>
                                             <p className="text-[9px] font-bold text-rose-500/80 uppercase">{blockedInfo.reason || 'Sem motivo informado'}</p>
                                             <button
                                                 onClick={() => handleUnblockDate(blockedInfo.id)}
@@ -2021,9 +2019,10 @@ const SessionManagement: React.FC = () => {
                                                             }
                                                         }}
                                                         className={`w-full text-left p-3 rounded-2xl border transition-all hover:scale-[1.02] active:scale-95 group relative ${status === 'attended' ? 'bg-emerald-50 border-emerald-100' :
-                                                            (status === 'missed' || status === 'justified') ? 'bg-rose-50 border-rose-100' :
-                                                                isOfficial ? 'bg-indigo-50/30 border-indigo-100' : // Subtle highlight for official
-                                                                    'bg-white border-slate-100 shadow-sm hover:border-indigo-200'
+                                                            status === 'missed' ? 'bg-rose-50 border-rose-100' :
+                                                                status === 'justified' ? 'bg-amber-50 border-amber-200 shadow-amber-100/50' :
+                                                                    isOfficial ? 'bg-indigo-50/30 border-indigo-100' : // Subtle highlight for official
+                                                                        'bg-white border-slate-100 shadow-sm hover:border-indigo-200'
                                                             } ${highlightedId === apt.id ? 'ring-2 ring-indigo-500 ring-offset-2 animate-pulse shadow-lg shadow-indigo-200' : ''}`}
                                                     >
                                                         <div className="flex items-center justify-between mb-1.5">
@@ -2036,8 +2035,9 @@ const SessionManagement: React.FC = () => {
                                                                     onChange={() => toggleSelectApt(apt.id)}
                                                                 />
                                                                 <div className={`w-2 h-2 rounded-full shadow-sm ${status === 'attended' ? 'bg-emerald-500' :
-                                                                    (status === 'missed' || status === 'justified') ? 'bg-rose-500' :
-                                                                        isOfficial ? 'bg-indigo-500' : 'bg-indigo-300'
+                                                                    status === 'missed' ? 'bg-rose-500' :
+                                                                        status === 'justified' ? 'bg-amber-500' :
+                                                                            isOfficial ? 'bg-indigo-500' : 'bg-indigo-300'
                                                                     }`} />
                                                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest truncate">{format(parseISO(apt.date), 'HH:mm')}</p>
                                                             </div>
@@ -2096,8 +2096,9 @@ const SessionManagement: React.FC = () => {
                                                         key={plan.id}
                                                         onClick={() => setSelectedSlot({ plan: plan as any, date: day })}
                                                         className={`w-full text-left p-3 rounded-2xl border transition-all hover:scale-[1.02] active:scale-95 group relative ${status === 'attended' ? 'bg-emerald-50 border-emerald-100' :
-                                                            (status === 'missed' || status === 'justified') ? 'bg-rose-50 border-rose-100' :
-                                                                'bg-white border-slate-100 shadow-sm hover:border-indigo-200'
+                                                            status === 'missed' ? 'bg-rose-50 border-rose-100' :
+                                                                status === 'justified' ? 'bg-amber-50 border-amber-200' :
+                                                                    'bg-white border-slate-100 shadow-sm hover:border-indigo-200'
                                                             }`}
                                                     >
                                                         <div className="flex items-center justify-between mb-1.5">
@@ -2197,7 +2198,8 @@ const SessionManagement: React.FC = () => {
             currentIter = addDays(currentIter, 1);
         }
 
-        const activePlans = filteredPlans.filter(p => p.status === 'active');
+        // Include 'completed' plans so that the counters in the headers match the actual agenda (showing all attended patients)
+        const activePlans = filteredPlans.filter(p => p.status === 'active' || p.status === 'completed');
 
         if (activePlans.length === 0) {
             return (
@@ -2233,9 +2235,17 @@ const SessionManagement: React.FC = () => {
                         return true;
                     });
 
+                    // Filter day appointments by active plans (respects doctor/search filters)
+                    const filteredDayApts = visibleDayApts.filter(a => activePlans.some(p => p.id === a.treatment_plan_id));
+                    
+                    // Count unique patients per status to avoid overcounting duplicates
+                    const attendedCount = new Set(filteredDayApts.filter(a => a.attendance_status === 'attended').map(a => a.treatment_plan_id)).size;
+                    const missedCount = new Set(filteredDayApts.filter(a => a.attendance_status === 'missed').map(a => a.treatment_plan_id)).size;
+                    const justifiedCount = new Set(filteredDayApts.filter(a => a.attendance_status === 'justified').map(a => a.treatment_plan_id)).size;
+
                     // Combine unique plan IDs
                     const planIdsOnThisDay = Array.from(new Set([
-                        ...visibleDayApts.map(a => a.treatment_plan_id),
+                        ...visibleDayApts.filter(a => activePlans.some(p => p.id === a.treatment_plan_id)).map(a => a.treatment_plan_id),
                         ...dayProjections.map(p => p.id)
                     ]));
 
@@ -2262,14 +2272,56 @@ const SessionManagement: React.FC = () => {
                                             {isSameDay(date, new Date()) && (
                                                 <span className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Atendimentos de Hoje</span>
                                             )}
-                                            <span className="text-[9px] font-bold text-slate-400 capitalize">
-                                                {planIdsOnThisDay.length} {planIdsOnThisDay.length === 1 ? 'paciente agendado' : 'pacientes agendados'}
-                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[9px] font-bold text-slate-400 capitalize">
+                                                    {planIdsOnThisDay.length} {planIdsOnThisDay.length === 1 ? 'agendado' : 'agendados'}
+                                                </span>
+                                                {(attendedCount > 0 || missedCount > 0 || justifiedCount > 0) && (
+                                                    <div className="flex items-center gap-2 border-l border-slate-200 pl-2">
+                                                        {attendedCount > 0 && (
+                                                            <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 px-1.5 py-0.5 rounded-lg border border-emerald-100/50">
+                                                                {attendedCount} {attendedCount === 1 ? 'presença' : 'presenças'}
+                                                            </span>
+                                                        )}
+                                                        {missedCount > 0 && (
+                                                            <span className="text-[9px] font-black text-rose-600 uppercase tracking-widest bg-rose-50 px-1.5 py-0.5 rounded-lg border border-rose-100/50">
+                                                                {missedCount} {missedCount === 1 ? 'falta' : 'faltas'}
+                                                            </span>
+                                                        )}
+                                                        {justifiedCount > 0 && (
+                                                            <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-1.5 py-0.5 rounded-lg border border-amber-100/50">
+                                                                {justifiedCount} {justifiedCount === 1 ? 'justificada' : 'justificadas'}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                                <div className={`transform transition-transform duration-300 ${isCollapsed ? '-rotate-90' : 'rotate-0'}`}>
-                                    <ChevronLeft size={24} className="text-slate-400 rotate-[-90deg]" />
+                                <div className="flex items-center gap-4">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            navigate('/agendamentos', {
+                                                state: {
+                                                    action: 'new',
+                                                    targetTab: 'sessao',
+                                                    preSelectedDate: format(date, 'yyyy-MM-dd'),
+                                                    returnTo: '/agendamentos/sessoes',
+                                                    selectedDoctorId: selectedDoctorId
+                                                }
+                                            });
+                                        }}
+                                        className="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all border border-indigo-100 shadow-sm flex items-center gap-1.5 group/add"
+                                        title="Agendar novo paciente para este dia"
+                                    >
+                                        <Plus size={16} strokeWidth={3} className="transition-transform group-hover/add:rotate-90" />
+                                        <span className="text-[10px] font-black uppercase tracking-widest pr-1">Agendar</span>
+                                    </button>
+                                    <div className={`transform transition-transform duration-300 ${isCollapsed ? '-rotate-90' : 'rotate-0'}`}>
+                                        <ChevronLeft size={24} className="text-slate-400 rotate-[-90deg]" />
+                                    </div>
                                 </div>
                             </button>
 
@@ -2285,7 +2337,8 @@ const SessionManagement: React.FC = () => {
                                             const attended = planHistory.filter(a => a.attendance_status === 'attended' && a.type !== 'Avaliação').length;
                                             const totals = plan.total_sessions || 0;
                                             const remaining = totals - attended;
-                                            const absences = planHistory.filter(a => a.attendance_status === 'missed' || a.attendance_status === 'justified').length;
+                                            const missedCount = planHistory.filter(a => a.attendance_status === 'missed').length;
+                                            const justifiedCount = planHistory.filter(a => a.attendance_status === 'justified').length;
 
                                             const targetApt = dayApts.find(a => a.treatment_plan_id === plan.id);
                                             const status = targetApt?.attendance_status || null;
@@ -2334,7 +2387,11 @@ const SessionManagement: React.FC = () => {
                                                         </div>
                                                         <div className="flex flex-col items-center">
                                                             <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Faltas</span>
-                                                            <span className={`text-xs font-black ${absences > 0 ? 'text-rose-500' : 'text-slate-400'}`}>{absences}</span>
+                                                            <span className={`text-xs font-black ${missedCount > 0 ? 'text-rose-500' : 'text-slate-400'}`}>{missedCount}</span>
+                                                        </div>
+                                                        <div className="flex flex-col items-center">
+                                                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Justif.</span>
+                                                            <span className={`text-xs font-black ${justifiedCount > 0 ? 'text-amber-500' : 'text-slate-400'}`}>{justifiedCount}</span>
                                                         </div>
                                                         <div className="flex flex-col items-end">
                                                             <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Restam</span>
@@ -2382,6 +2439,23 @@ const SessionManagement: React.FC = () => {
                                                                         >
                                                                             <AlertCircle size={14} /> Justificado
                                                                         </button>
+                                                                        {planHistory.filter(a => a.attendance_status !== 'cancelled' && a.type !== 'Avaliação').length > (plan.total_sessions || 0) && (
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    setConfirmModal({
+                                                                                        isOpen: true,
+                                                                                        planId: plan.id,
+                                                                                        action: 'bulk_exceeded',
+                                                                                        title: 'Limpar Extras',
+                                                                                        message: `Deseja remover as sessões que excedem o limite de ${plan.patient?.name.split(' ')[0]}?`
+                                                                                    });
+                                                                                    setOpenMenuId(null);
+                                                                                }}
+                                                                                className="w-full text-left px-3 py-2 text-[10px] font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2"
+                                                                            >
+                                                                                <X size={14} /> Corrigir Sessões (Limpar Extras)
+                                                                            </button>
+                                                                        )}
                                                                         <div className="h-px bg-slate-50 my-1"></div>
                                                                         <button
                                                                             onClick={() => { setConfirmModal({ isOpen: true, planId: plan.id, action: 'delete', title: 'Excluir Plano', message: 'Tem certeza que deseja excluir este plano?' }); setOpenMenuId(null); }}
@@ -2456,8 +2530,8 @@ const SessionManagement: React.FC = () => {
                                         isOpen: true,
                                         planId: null,
                                         action: 'bulk_exceeded',
-                                        title: 'Limpar Fantasmas',
-                                        message: 'Deseja remover TODOS os agendamentos que excedem o limite dos planos?'
+                                        title: 'Limpar Fantasmas (Ação Global)',
+                                        message: 'ATENÇÃO: Deseja remover TODOS os agendamentos que excedem o limite de TODOS os pacientes ativos na clínica? Esta ação não pode ser desfeita.'
                                     });
                                 }}
                                 className="bg-rose-50 text-rose-700 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest border border-rose-100 hover:bg-rose-100 transition-all flex items-center gap-2"
@@ -2632,19 +2706,58 @@ const SessionManagement: React.FC = () => {
                         {/* Content Area */}
                         {isRescheduling ? (
                             <div className="p-6 relative animate-in fade-in slide-in-from-bottom-4">
-                                <div className="flex items-center gap-2 text-indigo-600 mb-4">
-                                    <CalendarIcon size={18} />
-                                    <h4 className="text-xs font-black uppercase tracking-widest">Reagendar Sessão</h4>
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                                        <div className="w-1.5 h-4 bg-indigo-500 rounded-full"></div>
+                                        Reagendamento Rápido
+                                    </h3>
+                                    <button 
+                                        onClick={() => { fetchHistory(selectedSlot.plan.patient_id); setIsHistoryModalOpen(true); }}
+                                        className="text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-1 hover:bg-indigo-50 px-2 py-1 rounded-lg transition-all"
+                                    >
+                                        <HistoryIcon size={12} /> Ver Histórico
+                                    </button>
                                 </div>
 
                                 <div className="space-y-4">
-                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Nova Data</label>
-                                        <ModernDatePicker
-                                            value={rescheduleDate}
-                                            onChange={(date) => setRescheduleDate(date)}
-                                            required
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
+                                        <div className="space-y-2">
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Nova Data</label>
+                                            <ModernDatePicker
+                                                value={rescheduleDate}
+                                                onChange={(date) => setRescheduleDate(date)}
+                                                required
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Novo Horário</label>
+                                            <input
+                                                type="time"
+                                                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg outline-none font-bold text-sm text-slate-700 focus:border-indigo-500 transition-colors"
+                                                value={rescheduleTime}
+                                                onChange={(e) => setRescheduleTime(e.target.value)}
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Patient Upcoming Appointments & Conflict Check */}
+                                    <div className="mt-4 border-t border-slate-100 pt-4">
+                                        <PatientUpcomingAppointments 
+                                            patientId={selectedSlot.plan.patient_id} 
+                                            currentSelection={rescheduleDate ? new Date(rescheduleDate + 'T' + (rescheduleTime || '00:00')) : null}
+                                            onConflict={setHasConflict}
+                                            allowedSpecialties={ALLOWED_TREATMENT_SPECIALTIES}
                                         />
+                                        
+                                        {hasConflict && (
+                                            <div className="mt-3 p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 animate-pulse">
+                                                <AlertCircle size={16} className="text-rose-500" />
+                                                <p className="text-[10px] font-black text-rose-700 uppercase tracking-tight">
+                                                    Atenção: O paciente já possui agendamento nesta data!
+                                                </p>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="flex items-center gap-2 pt-2">
@@ -2660,9 +2773,15 @@ const SessionManagement: React.FC = () => {
                                         <button
                                             onClick={() => {
                                                 if (!rescheduleDate) return addToast('Selecione uma data.', 'error');
-                                                const [hours, minutes] = (selectedSlot.plan.schedule_time || '08:00').split(':');
+                                                if (!rescheduleTime) return addToast('Selecione um horário.', 'error');
+                                                const [hours, minutes] = rescheduleTime.split(':');
                                                 const [y, m, d] = rescheduleDate.split('-');
                                                 const newDateObj = new Date(parseInt(y), parseInt(m) - 1, parseInt(d), parseInt(hours), parseInt(minutes));
+                                                
+                                                if (hasConflict) {
+                                                    if (!window.confirm('Este paciente já possui agendamento neste dia. Deseja confirmar mesmo assim?')) return;
+                                                }
+                                                
                                                 handleReschedule(selectedSlot.plan, selectedSlot.date, newDateObj);
                                             }}
                                             className="flex-1 py-3 rounded-xl font-black text-xs text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2"
@@ -2683,8 +2802,10 @@ const SessionManagement: React.FC = () => {
 
                                             {/* Action Menu (Reagendar, Editar, Excluir) */}
                                             <div className="flex gap-1">
-                                                <button title="Histórico" onClick={() => { fetchHistory(selectedSlot.plan.patient_id); setIsHistoryModalOpen(true); }} className="p-1.5 text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"><HistoryIcon size={16} /></button>
-                                                <button title="Reagendar" onClick={() => setIsRescheduling(true)} className="p-1.5 text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"><CalendarIcon size={16} /></button>
+                                                <button title="Reagendar" onClick={() => {
+                                                    setRescheduleTime(selectedSlot.plan.schedule_time?.slice(0, 5) || '08:00');
+                                                    setIsRescheduling(true);
+                                                }} className="p-1.5 text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"><CalendarIcon size={16} /></button>
                                                 <button title="Editar Ficha" onClick={() => {
                                                     const apt = appointments.find(a => a.treatment_plan_id === selectedSlot.plan.id && isSameDay(parseISO(a.date), selectedSlot.date));
                                                     if (apt) { setEditModeData({ ...apt, treatment_plans: selectedSlot.plan }); setIsEditModalOpen(true); }

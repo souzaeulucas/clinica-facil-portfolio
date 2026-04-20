@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { X, UserRound, GraduationCap } from 'lucide-react';
 import PatientForm from '../PatientForm';
 import PatientDischarges from '../PatientDischarges';
+import Portal from '../Portal';
 
 interface PatientModalProps {
     isOpen: boolean;
-    onClose: () => void;
+    onClose: (data?: any) => void;
     patientId?: string;
     initialData?: any;
 }
@@ -15,7 +16,9 @@ const PatientModal: React.FC<PatientModalProps> = ({ isOpen, onClose, patientId,
 
     React.useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
+            if (e.key === 'Escape') {
+                onClose();
+            }
         };
         if (isOpen) window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
@@ -29,7 +32,8 @@ const PatientModal: React.FC<PatientModalProps> = ({ isOpen, onClose, patientId,
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={(e) => e.target === e.currentTarget && onClose()}>
+        <Portal>
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={(e) => e.target === e.currentTarget && onClose()}>
             <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
                 <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 backdrop-blur-sm z-10 flex-shrink-0">
                     <div>
@@ -80,6 +84,7 @@ const PatientModal: React.FC<PatientModalProps> = ({ isOpen, onClose, patientId,
                 </div>
             </div>
         </div>
+        </Portal>
     );
 };
 
