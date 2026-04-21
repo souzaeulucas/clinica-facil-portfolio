@@ -8,7 +8,7 @@ Sistema completo de gestão hospitalar focado em substituir fluxos manuais por a
 ---
 
 ## 📸 Preview do Sistema
-![Dashboard](public/preview.png)
+![Dashboard](https://raw.githubusercontent.com/souzaeulucas/clinicafacil/main/public/preview.png)
 
 ---
 
