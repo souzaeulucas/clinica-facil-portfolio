@@ -9,6 +9,13 @@ Sistema completo de gestão de pacientes desenvolvido para resolver problemas re
 
 ---
 
+## 🔗 Demonstração & Portfólio
+- **Acesse o Sistema**: [https://clinicafacil.vercel.app/](https://clinicafacil.vercel.app/)
+- **Versão de Portfólio (Demo)**: [https://portfolio-clinicafacil.vercel.app](https://portfolio-clinicafacil.vercel.app)
+- **LinkedIn**: [souzaeulucas](https://www.linkedin.com/in/souzaeulucas/)
+
+---
+
 ## 💡 O Problema
 Antes do Clínica Fácil, a gestão era baseada em planilhas desorganizadas, com múltiplas abas que dificultavam a separação entre primeira consulta e retornos, gerando perda de tempo e erros de agendamento.
 
