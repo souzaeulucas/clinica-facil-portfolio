@@ -1,74 +1,59 @@
-# 🏥 ClinicaFacil: Sistema de Gestão Inteligente
+# 🏥 Clínica Fácil
 
-![Banner](https://img.shields.io/badge/Status-Live_Demo-success?style=for-the-badge)
-![Tech Stack](https://img.shields.io/badge/Stack-React_19_|_TypeScript_|_Supabase-blue?style=for-the-badge)
+[![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://clinicafacil.vercel.app/)
+[![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
+[![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
 
-O **ClinicaFacil** é uma solução completa de Enterprise Resource Planning (ERP) focada na gestão de clínicas médicas e terapias multidisciplinares. O projeto resolve dores reais de agendamento, controle de altas, gestão financeira e acompanhamento de sessões.
-
----
-
-## 🔗 Demonstração
-**Acesse agora:** [https://portfolio-clinicafacil.vercel.app](https://portfolio-clinicafacil.vercel.app)
-> No login, utilize o botão **"Acesso para Recrutadores"** para entrar instantaneamente com dados de demonstração.
+Sistema completo de gestão de pacientes desenvolvido para resolver problemas reais de organização em uma clínica, substituindo o uso ineficiente de planilhas por uma solução centralizada e inteligente.
 
 ---
 
-## 🌟 Funcionalidades e Diferenciais
+## 💡 O Problema
+Antes do Clínica Fácil, a gestão era baseada em planilhas desorganizadas, com múltiplas abas que dificultavam a separação entre primeira consulta e retornos, gerando perda de tempo e erros de agendamento.
 
-### 🗓️ Gestão de Agendamentos e Escalas
-- **Controle de Escala Médica**: Módulo completo para gerenciar a disponibilidade dos profissionais, definindo horários de atendimento e bloqueios.
-- **Projeção de Presença (Therapy Patterns)**: Algoritmo que projeta agendamentos futuros para pacientes em terapias continuadas, facilitando a visualização da agenda a longo prazo.
-- **Validação de Conflitos**: Sistema inteligente que impede choques de horário e duplicidade de marcações.
-
-### 💰 Gestão Financeira e Faturamento
-- **Fluxo de Caixa**: Registro e acompanhamento de pagamentos (Cartão, Dinheiro, PIX).
-- **Faturamento SUS vs. Particular**: Separação automática de fluxos financeiros e relatórios de produção para facilitar o repasse e a prestação de contas.
-
-### 📋 Fluxo de Atendimento e Lista de Espera
-- **Gestão de Fila de Espera**: Controle rigoroso de pacientes aguardando agendamento, com filtros por urgência e especialidade.
-- **Automação de Retornos**: Inteligência que calcula e sugere automaticamente a data ideal para o retorno do paciente, otimizando a ocupação da agenda e a continuidade do tratamento.
-- **Painel de Pendências**: Visualização clara de pacientes que precisam de reagendamento ou confirmação de agendamento.
-
-### 🔄 Controle de Volume de Sessões
-- **Dashboard de Sessões por Paciente**: Monitoramento em tempo real de quantas sessões o paciente já realizou, quantas restam no plano e quem está próximo da alta.
-- **Gestão de Cancelamentos e Ausências**: Sistema para registrar e gerenciar faltas, permitindo um controle financeiro e logístico mais preciso.
-
-### 🛡️ Sistema de Alta Blindada (Destaque Técnico)
-- **Bloqueio Seletivo**: Funcionalidade avançada que impede novos agendamentos para especialidades de onde o paciente recebeu alta, mantendo-o livre para outras áreas da clínica.
-- **Segurança de Dados (RLS)**: Implementação rigorosa de *Row Level Security* no Postgres, garantindo que profissionais acessem apenas dados pertinentes à sua função.
-- **Logs de Auditoria**: Rastreabilidade completa de todas as alterações feitas no sistema (quem alterou, o quê e quando).
+## 🚀 A Solução
+O Clínica Fácil centraliza todas as operações em uma aplicação reativa que automatiza processos críticos, desde o controle de faltas até a gestão financeira de sessões de tratamento.
 
 ---
 
-## 🛠️ Stack Tecnológica
+## ✨ Principais Funcionalidades
 
-- **Frontend**: React 19 (Hooks, Context API, Vite)
-- **Linguagem**: TypeScript (Tipagem estrita em todo o projeto)
-- **Backend**: Supabase (PostgreSQL + Realtime + Auth)
-- **Estilização**: Tailwind CSS + Lucide Icons
-- **UX/UI**: Clean design focado em usabilidade, com feedbacks visuais instantâneos.
+### 👥 Gestão de Pacientes
+- **Cadastro Completo**: Edição e exclusão com validação de CPF.
+- **Busca Avançada**: Filtros rápidos por nome ou documento direto no banco.
+- **Utilidades**: Botões de cópia rápida para CPF, Celular e Nome para agilizar processos externos.
 
----
+### 📅 Gestão de Agendamentos
+- **Triagem Inteligente**: Abas dedicadas para Pendentes (Fila de Espera), Fila SUS e Confirmados.
+- **Dashboard Pro**: Visão analítica diária da operação da clínica.
+- **Interface Intuitiva**: Cores e ícones que facilitam a leitura rápida do status do paciente.
 
-## 🏗️ Arquitetura e Engenharia
-O projeto foi estruturado seguindo princípios de **Clean Code** e **Componentização**, visando escalabilidade. A lógica de negócio é isolada do UI, e o estado global é gerenciado de forma eficiente para garantir uma experiência de usuário (UX) fluida.
+### ⚙️ Regras de Negócio (Inteligência)
+- **🛡️ Sistema de Strikes**: Bloqueio automático de agendamentos após 2 faltas injustificadas.
+- **🎓 Controle de Altas**: Bloqueio de agendamentos para especialidades onde o paciente já concluiu o tratamento.
+- **📊 Gestão de Sessões**: Controle de sessões autorizadas vs. utilizadas com cálculo automático de saldo e limpeza de órfãos.
 
----
+### 💬 Integração com WhatsApp
+- **Contato Direto**: Botão dedicado para abrir o chat com o paciente em um clique.
+- **Agilidade**: Redirecionamento automático com suporte a múltiplos números por paciente.
 
-## 🚀 Como Executar Localmente
-
-1. Clone o projeto: `git clone https://github.com/souzaeulucas/clinicafacil.git`
-2. Instale: `npm install`
-3. Configure o `.env` com suas chaves do Supabase.
-4. Execute: `npm run dev`
-
----
-
-## 👤 Autor
-**Lucas Souza**
-- Desenvolvedor focado em soluções Fullstack e Arquitetura de Sistemas.
-- [LinkedIn: souzaeulucas](https://www.linkedin.com/in/souzaeulucas/)
+### 📊 Dashboard Analítico
+- Visualização de agendamentos pendentes, urgentes e confirmados.
+- Gráficos de volume histórico e métricas de desempenho.
 
 ---
 
-> Esse projeto é uma demonstração de habilidades técnicas em Fullstack Development e foi construído para resolver problemas reais de fluxo de trabalho clínico.
+## 🧠 Tecnologias e Arquitetura
+- **Frontend**: React 19 + TypeScript + Vite.
+- **Database**: PostgreSQL (Supabase) com Row Level Security (RLS).
+- **Styling**: Tailwind CSS (Design Moderno e Responsivo).
+- **Infra**: Deploy contínuo via Vercel.
+
+---
+
+## 🌐 Acesse o sistema
+[clinicafacil.vercel.app](https://clinicafacil.vercel.app/)
+
+---
+Este projeto é mantido por **Lucas Souza** e reflete a aplicação de boas práticas de desenvolvimento de software em um cenário real.
