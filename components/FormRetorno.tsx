@@ -37,6 +37,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
     forecastDate: '',
     notes: '',
     birthDate: '',
+    condition: 'none' as 'none' | 'priority' | 'dpoc',
     is_sus: false
   });
   const [showPhone2, setShowPhone2] = useState(false);
@@ -78,7 +79,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
         let possiblePatientIds = formData.patientId ? [formData.patientId] : [];
         
         if (cleanCPF) {
-          const { data: matchedCpf } = await supabase.from('patients').select('id').or(`cpf.eq."${formData.cpf}",cpf.eq."${cleanCPF}"`);
+          const { data: matchedCpf } = await supabase.from('patients').select('id').or(`cpf.eq.${formData.cpf},cpf.eq.${cleanCPF}`);
           if (matchedCpf && matchedCpf.length > 0) {
             possiblePatientIds = [...possiblePatientIds, ...matchedCpf.map(p => p.id)];
           }
@@ -201,6 +202,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
         forecastDate: initialData.date ? initialData.date.split('T')[0] : '',
         notes: notesValue,
         birthDate: initialData.patients?.birth_date || '',
+        condition: initialData.patients?.condition || 'none',
         is_sus: initialData.patients?.is_sus || false
       });
 
@@ -342,7 +344,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
         const { data: cpfResults } = await supabase
           .from('patients')
           .select('id, name, is_blocked')
-          .or(`cpf.eq."${formData.cpf}",cpf.eq."${cleanCPF}"`);
+          .or(`cpf.eq.${formData.cpf},cpf.eq.${cleanCPF}`);
 
         if (cpfResults && cpfResults.length > 0) {
           const existingPatient = cpfResults[0];
@@ -380,6 +382,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
               phone: finalPhone,
               cpf: formData.cpf,
               birth_date: formData.birthDate || null,
+              condition: formData.condition,
               is_sus: formData.is_sus
             })
             .eq('id', patientId);
@@ -431,13 +434,14 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
                 phone: finalPhone,
                 cpf: formData.cpf,
                 birth_date: formData.birthDate || null,
+                condition: formData.condition,
                 is_sus: formData.is_sus
               })
               .eq('id', patientId);
           } else {
             const { data: newPatient, error: createError } = await supabase
               .from('patients')
-              .insert([{ name: cleanName, phone: finalPhone, cpf: formData.cpf, birth_date: formData.birthDate || null, is_sus: formData.is_sus }])
+              .insert([{ name: cleanName, phone: finalPhone, cpf: formData.cpf, birth_date: formData.birthDate || null, condition: formData.condition, is_sus: formData.is_sus }])
               .select()
               .single();
             if (createError) throw createError;
@@ -488,7 +492,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
         } else {
           const { data: newPatient, error: createError } = await supabase
             .from('patients')
-            .insert([{ name: cleanName, phone: finalPhone, birth_date: formData.birthDate || null, is_sus: formData.is_sus }])
+            .insert([{ name: cleanName, phone: finalPhone, birth_date: formData.birthDate || null, condition: formData.condition, is_sus: formData.is_sus }])
             .select()
             .single();
           if (createError) throw createError;
@@ -530,9 +534,11 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
       };
 
       if (initialData?.id) {
+        // Garantir que o payload nunca seja undefined para evitar erro de JSON
+        const updatePayload = appointmentData || {};
         const { error } = await supabase
           .from('appointments')
-          .update(appointmentData)
+          .update(updatePayload)
           .eq('id', initialData.id);
         if (error) throw error;
         addToast('Retorno atualizado com sucesso!', 'success');
@@ -616,6 +622,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
                       phone2: p2 || '',
                       cpf: patient.cpf || prev.cpf,
                       birthDate: patient.birth_date || prev.birthDate,
+                      condition: (patient.condition as any) || 'none',
                       is_sus: !!patient.is_sus
                     }));
                     if (p2) setShowPhone2(true);
@@ -747,6 +754,40 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
               </div>
               <span className="text-[10px] font-black uppercase tracking-widest">Paciente SUS</span>
             </button>
+          </div>
+
+          <div className="px-4 pb-4">
+            <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest mb-2 block">
+                Condição do Paciente
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+                {[
+                    { id: 'none', label: 'Padrão', color: 'slate' },
+                    { id: 'priority', label: 'Prioridade', color: 'amber' },
+                    { id: 'dpoc', label: 'DPOC', color: 'indigo' }
+                ].map((opt) => (
+                    <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, condition: opt.id as any }))}
+                        className={`flex flex-col p-2.5 rounded-xl border transition-all text-left ${formData.condition === opt.id
+                            ? (opt.id === 'priority' ? 'border-amber-500 bg-amber-50 shadow-sm' :
+                                opt.id === 'dpoc' ? 'border-indigo-500 bg-indigo-50 shadow-sm' :
+                                    'border-slate-800 bg-slate-50')
+                            : 'border-slate-100 bg-white hover:border-slate-200'
+                            }`}
+                    >
+                        <span className={`text-[9px] font-black uppercase tracking-wider ${formData.condition === opt.id
+                            ? (opt.id === 'priority' ? 'text-amber-700' :
+                                opt.id === 'dpoc' ? 'text-indigo-700' :
+                                    'text-slate-900')
+                            : 'text-slate-400'
+                            }`}>
+                            {opt.label}
+                        </span>
+                    </button>
+                ))}
+            </div>
           </div>
 
           {isBlocked && (
@@ -1024,6 +1065,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
               phone: p1 || prev.phone,
               phone2: p2 || prev.phone2,
               birthDate: updatedPatient.birth_date || prev.birthDate,
+              condition: (updatedPatient.condition as any) || prev.condition,
               is_sus: !!updatedPatient.is_sus
             }));
             if (p2) setShowPhone2(true);

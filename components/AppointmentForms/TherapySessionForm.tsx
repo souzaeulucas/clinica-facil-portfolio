@@ -349,7 +349,7 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
                 // 1. Try to find patient with this CPF
                 const { data: existingPatient } = await supabase.from('patients')
                     .select('id, name')
-                    .or(`cpf.eq."${newPatientCPF}",cpf.eq."${newPatientCPF.replace(/\D/g, '')}"`)
+                    .or(`cpf.eq.${newPatientCPF},cpf.eq.${newPatientCPF.replace(/\D/g, '')}`)
                     .maybeSingle();
 
                 if (existingPatient) {
@@ -411,7 +411,7 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
                                 const { data: lastChance } = await supabase
                                     .from('patients')
                                     .select('id')
-                                    .or(`cpf.eq."${newPatientCPF}",cpf.eq."${newPatientCPF.replace(/\D/g, '')}"`)
+                                    .or(`cpf.eq.${newPatientCPF},cpf.eq.${newPatientCPF.replace(/\D/g, '')}`)
                                     .maybeSingle();
                                 if (lastChance) targetPatientId = lastChance.id;
                                 else throw pError;

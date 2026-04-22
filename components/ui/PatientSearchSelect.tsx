@@ -11,6 +11,7 @@ export interface PatientSearchResult {
     birth_date?: string;
     is_blocked?: boolean;
     is_sus?: boolean;
+    condition?: string;
 }
 
 interface PatientSearchSelectProps {
@@ -66,17 +67,17 @@ const PatientSearchSelect: React.FC<PatientSearchSelectProps> = ({
 
                 let query = supabase
                     .from('patients')
-                    .select('id, name, cpf, phone, birth_date, is_blocked, is_sus')
+                    .select('id, name, cpf, phone, birth_date, is_blocked, is_sus, condition')
                     .limit(100); // Increased limit to allow client-side filtering and broad results
 
                 if (isNumeric && cleanNumericValue.length >= 5) {
                     const formattedCPF = cleanNumericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
-                    query = query.or(`cpf.eq."${value}",cpf.eq."${cleanNumericValue}",cpf.eq."${formattedCPF}",phone.ilike."%${value}%"`);
+                    query = query.or(`cpf.eq.${value},cpf.eq.${cleanNumericValue},cpf.eq.${formattedCPF},phone.ilike.%${value}%`);
                 } else {
                     const terms = cleanTerm.split(/\s+/).filter(Boolean);
 
                     if (isNumeric && cleanNumericValue.length > 0) {
-                        query = query.or(`cpf.ilike."%${cleanNumericValue}%",phone.ilike."%${cleanNumericValue}%",name.ilike."${getWildcardPattern(cleanTerm)}"`);
+                        query = query.or(`cpf.ilike.%${cleanNumericValue}%,phone.ilike.%${cleanNumericValue}%,name.ilike.${getWildcardPattern(cleanTerm)}`);
                     } else if (terms.length > 0) {
                         // Use wildcard pattern for the first term to be more inclusive
                         terms.forEach((term, index) => {
@@ -122,7 +123,7 @@ const PatientSearchSelect: React.FC<PatientSearchSelectProps> = ({
                     const firstChar = cleanTerm[0];
                     const { data: broadData } = await supabase
                         .from('patients')
-                        .select('id, name, cpf, phone, birth_date, is_blocked, is_sus')
+                        .select('id, name, cpf, phone, birth_date, is_blocked, is_sus, condition')
                         .ilike('name', `${firstChar}%`)
                         .limit(200);
 

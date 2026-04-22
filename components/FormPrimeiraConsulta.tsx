@@ -68,6 +68,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
     notes: '',
     selectedDate: new Date().toISOString().split('T')[0],
     birthDate: '',
+    condition: 'none' as 'none' | 'priority' | 'dpoc',
     is_sus: false,
     is_internal_referral: false
   });
@@ -116,6 +117,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
         notes: initialData.notes || '',
         selectedDate: initialData.date ? initialData.date.split('T')[0] : new Date().toISOString().split('T')[0],
         birthDate: initialData.patients?.birth_date || '',
+        condition: initialData.patients?.condition || 'none',
         is_sus: initialData.patients?.is_sus || false,
         is_internal_referral: initialData.is_internal_referral || false
       });
@@ -283,6 +285,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
             phone: finalPhone,
             cpf: finalCPF,
             birth_date: formData.birthDate || null,
+            condition: formData.condition,
             is_sus: formData.is_sus
           })
           .eq('id', patientId);
@@ -293,8 +296,9 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
           const { data: cpfResults } = await supabase
             .from('patients')
             .select('id, name, cpf, is_blocked')
-            // Using quotes around values to avoid parsing issues with dots/dashes
-            .or(`cpf.eq."${formData.cpf}",cpf.eq."${cleanCPF}"`);
+            .select('id, name, cpf, is_blocked')
+            // Removendo aspas duplas desnecessárias que podem causar erro em algumas versões do PostgREST
+            .or(`cpf.eq.${formData.cpf},cpf.eq.${cleanCPF}`);
 
           if (cpfResults && cpfResults.length > 0) {
             const existing = cpfResults[0];
@@ -308,7 +312,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
             addToast(`Paciente já cadastrado como ${existing.name}. Usando cadastro existente.`, 'success');
             const { error: patientUpdateError } = await supabase
               .from('patients')
-              .update({ name: finalPatientName, phone: finalPhone, cpf: finalCPF, birth_date: formData.birthDate || null, is_sus: formData.is_sus })
+              .update({ name: finalPatientName, phone: finalPhone, cpf: finalCPF, birth_date: formData.birthDate || null, condition: formData.condition, is_sus: formData.is_sus })
               .eq('id', patientId);
             if (patientUpdateError) throw patientUpdateError;
           }
@@ -350,6 +354,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
               phone: finalPhone,
               cpf: finalCPF,
               birth_date: formData.birthDate || null,
+              condition: formData.condition,
               is_sus: formData.is_sus
             }])
             .select().single();
@@ -421,9 +426,16 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
       }
 
       if (initialData?.id) {
+        // Garantir que o payload nunca seja undefined para evitar erro de JSON
+        const updatePayload = appointmentsToInsert.length > 0 ? appointmentsToInsert[0] : {
+          status: (formData.is_sus) ? 'waiting_sus' : formData.status,
+          notes: formData.notes,
+          is_internal_referral: formData.is_internal_referral
+        };
+
         const { error } = await supabase
           .from('appointments')
-          .update(appointmentsToInsert[0])
+          .update(updatePayload)
           .eq('id', initialData.id);
         if (error) throw error;
         addToast('Agendamento atualizado com sucesso!', 'success');
@@ -491,6 +503,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
                       cpf: patient.cpf || prev.cpf,
                       phone: patient.phone || prev.phone,
                       birthDate: patient.birth_date || prev.birthDate,
+                      condition: (patient.condition as any) || 'none',
                       is_sus: !!patient.is_sus
                     }));
                     if (patient.is_blocked) {
@@ -925,6 +938,40 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
           </div>
         </div>
 
+          <div className="px-4 pb-4">
+            <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest mb-2 block">
+                Condição do Paciente
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+                {[
+                    { id: 'none', label: 'Padrão', color: 'slate' },
+                    { id: 'priority', label: 'Prioridade', color: 'amber' },
+                    { id: 'dpoc', label: 'DPOC', color: 'indigo' }
+                ].map((opt) => (
+                    <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, condition: opt.id as any }))}
+                        className={`flex flex-col p-2.5 rounded-xl border transition-all text-left ${formData.condition === opt.id
+                            ? (opt.id === 'priority' ? 'border-amber-500 bg-amber-50 shadow-sm' :
+                                opt.id === 'dpoc' ? 'border-indigo-500 bg-indigo-50 shadow-sm' :
+                                    'border-slate-800 bg-slate-50')
+                            : 'border-slate-100 bg-white hover:border-slate-200'
+                            }`}
+                    >
+                        <span className={`text-[9px] font-black uppercase tracking-wider ${formData.condition === opt.id
+                            ? (opt.id === 'priority' ? 'text-amber-700' :
+                                opt.id === 'dpoc' ? 'text-indigo-700' :
+                                    'text-slate-900')
+                            : 'text-slate-400'
+                            }`}>
+                            {opt.label}
+                        </span>
+                    </button>
+                ))}
+            </div>
+          </div>
+
         {/* Observation Section */}
         <div className="bg-white rounded-[1rem] shadow-sm border border-slate-200 overflow-hidden transform transition-all">
           <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/50">
@@ -980,6 +1027,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
               phone: p1 || prev.phone,
               phone2: p2 || prev.phone2,
               birthDate: updatedPatient.birth_date || prev.birthDate,
+              condition: (updatedPatient.condition as any) || 'none',
               is_sus: !!updatedPatient.is_sus
             }));
             if (p2) setShowPhone2(true);
