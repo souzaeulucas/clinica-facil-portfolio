@@ -755,56 +755,6 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
               <span className="text-[10px] font-black uppercase tracking-widest">Paciente SUS</span>
             </button>
           </div>
-
-          <div className="px-4 pb-4">
-            <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase tracking-widest mb-2 block">
-                Condição do Paciente
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-                {[
-                    { id: 'none', label: 'Padrão', color: 'slate' },
-                    { id: 'priority', label: 'Prioridade', color: 'amber' },
-                    { id: 'dpoc', label: 'DPOC', color: 'indigo' }
-                ].map((opt) => (
-                    <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, condition: opt.id as any }))}
-                        className={`flex flex-col p-2.5 rounded-xl border transition-all text-left ${formData.condition === opt.id
-                            ? (opt.id === 'priority' ? 'border-amber-500 bg-amber-50 shadow-sm' :
-                                opt.id === 'dpoc' ? 'border-indigo-500 bg-indigo-50 shadow-sm' :
-                                    'border-slate-800 bg-slate-50')
-                            : 'border-slate-100 bg-white hover:border-slate-200'
-                            }`}
-                    >
-                        <span className={`text-[9px] font-black uppercase tracking-wider ${formData.condition === opt.id
-                            ? (opt.id === 'priority' ? 'text-amber-700' :
-                                opt.id === 'dpoc' ? 'text-indigo-700' :
-                                    'text-slate-900')
-                            : 'text-slate-400'
-                            }`}>
-                            {opt.label}
-                        </span>
-                    </button>
-                ))}
-            </div>
-          </div>
-
-          {isBlocked && (
-            <div className="px-8 pb-8 animate-in fade-in zoom-in duration-300">
-              <div className="bg-rose-50 border-2 border-rose-100 rounded-2xl p-4 flex items-start gap-4">
-                <div className="bg-rose-100 p-2 rounded-xl shrink-0">
-                  <X size={20} className="text-rose-600" />
-                </div>
-                <div>
-                  <h4 className="text-rose-800 font-black text-xs uppercase tracking-widest mb-1">Paciente Bloqueado</h4>
-                  <p className="text-rose-700 text-sm font-bold leading-relaxed">
-                    Este paciente atingiu o limite de 2 faltas não justificadas e não pode receber novos agendamentos sem liberação administrativa.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Return Details Section */}
