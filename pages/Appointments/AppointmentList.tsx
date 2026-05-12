@@ -288,10 +288,7 @@ const AppointmentList: React.FC = () => {
             if (filters.type) query = query.eq('type', filters.type);
             if (filters.onlyUrgent) query = query.eq('status', 'urgent');
 
-            if (filters.search) {
-                const search = filters.search.trim();
-                query = query.ilike('patients.name', `%${search}%`);
-            }
+            // Removed server-side search to allow accent-insensitive client-side filtering via includesNormalized
 
             // Ordering - Always use assignment date for consistency as requested
             query = query.order('date', { ascending: sortOrder === 'oldest' });
