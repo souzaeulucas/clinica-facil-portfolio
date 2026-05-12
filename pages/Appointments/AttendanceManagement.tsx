@@ -117,7 +117,7 @@ const AttendanceManagement: React.FC = () => {
                     specialty:specialties!specialty_id (name, id),
                     doctors:doctors!doctor_id (name, id),
                     treatment_plans (is_sus)
-                `)
+                `).is('deleted_at', null)
                 .in('status', ['absent', 'absent_justified']) // Remove 'missed' and 'cancelled' to keep it manual/medical
                 .order('date', { ascending: false });
 
@@ -204,7 +204,7 @@ const AttendanceManagement: React.FC = () => {
         try {
             const { error } = await supabase
                 .from('appointments')
-                .delete()
+                .update({ deleted_at: new Date().toISOString() })
                 .eq('id', deleteModal.id);
 
             if (error) throw error;
@@ -253,7 +253,7 @@ const AttendanceManagement: React.FC = () => {
             if (!patientId && cleanCPF) {
                 const { data: cpfResults } = await supabase
                     .from('patients')
-                    .select('id, is_blocked')
+                    .select('id, is_blocked').is('deleted_at', null)
                     .or(`cpf.eq.${manualForm.cpf},cpf.eq.${cleanCPF}`)
                     .maybeSingle();
 

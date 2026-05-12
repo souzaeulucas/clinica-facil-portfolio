@@ -16,6 +16,7 @@ export const rebalancePayments = async (planId: string, pricePerSession: number)
         const { data: eligibleAptsRaw, error: aptsError } = await supabase
             .from('appointments')
             .select('id, date, attendance_status, status, type')
+            .is('deleted_at', null)
             .eq('treatment_plan_id', planId)
             .in('type', ['Sessão', 'Avaliação', 'Primeira Consulta', 'Retorno'])
             .neq('status', 'cancelled')

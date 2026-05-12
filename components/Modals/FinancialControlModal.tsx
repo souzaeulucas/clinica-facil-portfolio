@@ -155,7 +155,7 @@ const FinancialControlModal: React.FC<FinancialControlModalProps> = ({ isOpen, o
             // 1. Get distinct plan IDs active this week
             const { data: weekApts, error: aptError } = await supabase
                 .from('appointments')
-                .select('treatment_plan_id')
+                .select('treatment_plan_id').is('deleted_at', null)
                 .in('type', ['Sessão', 'Primeira Consulta', 'Retorno', 'Avaliação'])
                 .gte('date', weekStart.toISOString())
                 .lte('date', weekEnd.toISOString());

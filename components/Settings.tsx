@@ -152,7 +152,7 @@ const Settings: React.FC = () => {
     try {
       const { data: plans, error: plansError } = await supabase
         .from('treatment_plans')
-        .select('*, patient:patients(name)')
+        .select('*, patient:patients(name)').is('deleted_at', null)
         .eq('status', 'active');
 
       if (plansError) throw plansError;
@@ -163,7 +163,7 @@ const Settings: React.FC = () => {
 
       const { data: existingApts, error: aptsError } = await supabase
         .from('appointments')
-        .select('treatment_plan_id, date')
+        .select('treatment_plan_id, date').is('deleted_at', null)
         .eq('status', 'scheduled');
 
       if (aptsError) throw aptsError;
@@ -224,7 +224,7 @@ const Settings: React.FC = () => {
   const fetchData = async () => {
     try {
       const [specsRes, docsRes] = await Promise.all([
-        supabase.from('specialties').select('*').order('name'),
+        supabase.from('specialties').select('*').is('deleted_at', null).order('name'),
         supabase.from('doctors').select('*').order('name')
       ]);
 
@@ -378,7 +378,7 @@ const Settings: React.FC = () => {
       // 1. Verificar se existem agendamentos vinculados
       const { count: aptCount, error: aptError } = await supabase
         .from('appointments')
-        .select('*', { count: 'exact', head: true })
+        .select('*', { count: 'exact', head: true }).is('deleted_at', null)
         .eq('doctor_id', id);
 
       if (aptError) throw aptError;

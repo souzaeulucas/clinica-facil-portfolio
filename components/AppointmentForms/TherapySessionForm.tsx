@@ -322,7 +322,7 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
             if (conflictDate) {
                 const { data: conflicts } = await supabase
                     .from('appointments')
-                    .select('id, treatment_plan_id')
+                    .select('id, treatment_plan_id').is('deleted_at', null)
                     .eq('patient_id', targetPatientId)
                     .eq('date', conflictDate.toISOString())
                     .neq('attendance_status', 'cancelled');
@@ -483,7 +483,7 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
                     // Fetch all existing physical appointments for this plan to know what history is preserved
                     const { data: allExisting } = await supabase
                         .from('appointments')
-                        .select('date, status, attendance_status, type')
+                        .select('date, status, attendance_status, type').is('deleted_at', null)
                         .eq('treatment_plan_id', planId);
 
                     let preservedCount = 0;
@@ -602,7 +602,7 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
                     // If we are editing a specific appointment that is TODAY or immediate, let's update it individually just in case
                     if (initialData.id) {
                         // verify if the appointment still exists before updating it
-                        const { data: verifyApt } = await supabase.from('appointments').select('id, date').eq('id', initialData.id).single();
+                        const { data: verifyApt } = await supabase.from('appointments').select('id, date').is('deleted_at', null).eq('id', initialData.id).single();
 
                         if (verifyApt) {
                             const [h, m] = scheduleTime.split(':');
@@ -648,7 +648,7 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
                 addToast('Ficha atualizada e agenda sincronizada!', 'success');
             } else {
                 // INSERT new plan
-                const { data, error } = await supabase.from('treatment_plans').insert([planData]).select().single();
+                const { data, error } = await supabase.from('treatment_plans').insert([planData]).select().is('deleted_at', null).single();
                 if (error) throw error;
                 newPlan = data;
 
@@ -687,7 +687,7 @@ const TherapySessionForm: React.FC<TherapySessionFormProps> = ({ isModal = false
 
 
                 if (appointmentsToCreate.length > 0) {
-                    const { data: createdApts, error: aptError } = await supabase.from('appointments').insert(appointmentsToCreate).select('id, date');
+                    const { data: createdApts, error: aptError } = await supabase.from('appointments').insert(appointmentsToCreate).select('id, date').is('deleted_at', null);
                     if (aptError) addToast('Plano criado, mas houve erro ao gerar a agenda automática.', 'warning');
                     if (createdApts && createdApts.length > 0) {
                         createdId = createdApts[0].id;

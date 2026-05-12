@@ -416,7 +416,7 @@ const SessionManagement: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('doctors')
-                .select('*, spec:specialties(name)')
+                .select('*, spec:specialties(name)').is('deleted_at', null)
                 .order('name');
             if (error) throw error;
             setAllDoctors(data as any || []);
@@ -608,7 +608,7 @@ const SessionManagement: React.FC = () => {
                     *,
                     doctor:doctors(name),
                     specialty:specialties(name)
-                `)
+                `).is('deleted_at', null)
                 .eq('patient_id', patientId)
                 .order('date', { ascending: false });
 
@@ -683,7 +683,7 @@ const SessionManagement: React.FC = () => {
                             amount,
                             payment:therapy_payments(payment_method)
                         )
-                    `)
+                    `).is('deleted_at', null)
                     .in('treatment_plan_id', planIds)
                     .order('date', { ascending: true })
                     .range(from, from + step);
@@ -740,7 +740,7 @@ const SessionManagement: React.FC = () => {
                     specialty:specialties!specialty_id(name),
                     treatment_plans(id, sessions_per_week, price_per_session, is_sus, status),
                     allocations:payment_allocations(amount, payment:therapy_payments(payment_method))
-                `)
+                `).is('deleted_at', null)
                 .gte('date', fetchStart.toISOString())
                 .lte('date', fetchEnd.toISOString())
                 .neq('status', 'waiting_sus')
@@ -919,7 +919,7 @@ const SessionManagement: React.FC = () => {
             // Fetch the details of selected appointments
             const { data: selectedDetails, error: fetchError } = await supabase
                 .from('appointments')
-                .select('id, treatment_plan_id, date')
+                .select('id, treatment_plan_id, date').is('deleted_at', null)
                 .in('id', selectedApts);
 
             if (fetchError) throw fetchError;
@@ -1025,7 +1025,7 @@ const SessionManagement: React.FC = () => {
 
             const { data: existingApts } = await supabase
                 .from('appointments')
-                .select('id, status, attendance_status')
+                .select('id, status, attendance_status').is('deleted_at', null)
                 .eq('treatment_plan_id', planId)
                 .gte('date', startOfReq.toISOString())
                 .lte('date', endOfReq.toISOString())
@@ -1040,7 +1040,7 @@ const SessionManagement: React.FC = () => {
                     setAppointments(prev => prev.filter(a => a.id !== existingApt.id)); // Optimistic UI
                     const { error: deleteError } = await supabase
                         .from('appointments')
-                        .delete()
+                        .update({ deleted_at: new Date().toISOString() })
                         .eq('id', existingApt.id);
                     error = deleteError;
                     // End of Change
@@ -1077,7 +1077,7 @@ const SessionManagement: React.FC = () => {
                 // FINAL SAFETY CHECK: Re-check if it exists now, just before inserting
                 const { data: doubleCheck } = await supabase
                     .from('appointments')
-                    .select('id')
+                    .select('id').is('deleted_at', null)
                     .eq('treatment_plan_id', planId)
                     .eq('date', appointmentDate.toISOString())
                     .single();
@@ -1119,7 +1119,7 @@ const SessionManagement: React.FC = () => {
                             specialty:specialties!specialty_id(name),
                             treatment_plans(id, sessions_per_week, price_per_session, is_sus, status),
                             allocations:payment_allocations(amount, payment:therapy_payments(payment_method))
-                        `)
+                        `).is('deleted_at', null)
                         .single();
 
                     if (newApt) {
@@ -1147,7 +1147,7 @@ const SessionManagement: React.FC = () => {
             if (status === 'attended') {
                 const { count: attendedCount } = await supabase
                     .from('appointments')
-                    .select('*', { count: 'exact', head: true })
+                    .select('*', { count: 'exact', head: true }).is('deleted_at', null)
                     .eq('treatment_plan_id', planId)
                     .eq('attendance_status', 'attended')
                     .neq('type', 'Avaliação');
@@ -1204,7 +1204,7 @@ const SessionManagement: React.FC = () => {
             setActionLoading(true);
             const apt = appointments.find(a => a.treatment_plan_id === planId && isSameDay(parseISO(a.date), date));
             if (apt) {
-                const { error } = await supabase.from('appointments').delete().eq('id', apt.id);
+                const { error } = await supabase.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', apt.id);
                 if (error) throw error;
                 addToast('Registro removido da agenda.', 'success');
                 fetchAppointments();
@@ -1360,7 +1360,7 @@ const SessionManagement: React.FC = () => {
             // 1. CONFLICT CHECK
             const { data: conflict } = await supabase
                 .from('appointments')
-                .select('id, date')
+                .select('id, date').is('deleted_at', null)
                 .eq('patient_id', plan.patient_id)
                 .gte('date', startOfDay(newDate).toISOString())
                 .lte('date', endOfDay(newDate).toISOString())
@@ -1524,7 +1524,7 @@ const SessionManagement: React.FC = () => {
                     specialty:specialties(name),
                     sessions:therapy_sessions(*),
                     payments:therapy_payments(*)
-                `)
+                `).is('deleted_at', null)
                 .eq('id', planId)
                 .single();
 
@@ -1630,7 +1630,7 @@ const SessionManagement: React.FC = () => {
                     // Fetch history to know what is preserved
                     const { data: allExisting } = await supabase
                         .from('appointments')
-                        .select('date, status, attendance_status')
+                        .select('date, status, attendance_status').is('deleted_at', null)
                         .eq('treatment_plan_id', confirmModal.planId)
                         .neq('type', 'Avaliação');
 
@@ -2167,7 +2167,7 @@ const SessionManagement: React.FC = () => {
                         amount,
                         appointment:appointments(date)
                     )
-                `)
+                `).is('deleted_at', null)
                 .eq('treatment_plan_id', plan.id)
                 .order('payment_date', { ascending: false });
 
@@ -3297,7 +3297,7 @@ const handleBulkRescheduleAction = async (aptIds: string[], newDate: Date, appoi
         // 1. BULK CONFLICT CHECK
         const { data: conflicts } = await supabase
             .from('appointments')
-            .select('patient_id, date, patients(name)')
+            .select('patient_id, date, patients(name)').is('deleted_at', null)
             .in('patient_id', patientIds)
             .gte('date', startOfDay(newDate).toISOString())
             .lte('date', endOfDay(newDate).toISOString())

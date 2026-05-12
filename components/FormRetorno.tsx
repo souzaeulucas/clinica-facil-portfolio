@@ -359,7 +359,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
           const selectedDoctorForCheck = doctors.find(d => d.id === formData.doctorId);
           const { data: pendingAppointments } = await supabase
             .from('appointments')
-            .select('id, specialty_id, doctor_id')
+            .select('id, specialty_id, doctor_id').is('deleted_at', null)
             .eq('patient_id', patientId)
             .in('status', ['scheduled', 'urgent'])
             .neq('id', initialData?.id || '');
@@ -412,7 +412,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
             const selectedDoctorForCheck = doctors.find(d => d.id === formData.doctorId);
             const { data: pendingAppointments } = await supabase
               .from('appointments')
-              .select('id, specialty_id, doctor_id')
+              .select('id, specialty_id, doctor_id').is('deleted_at', null)
               .eq('patient_id', patientId)
               .in('status', ['scheduled', 'urgent'])
               .neq('id', initialData?.id || '');
@@ -474,7 +474,7 @@ const FormRetorno: React.FC<ReturnFormProps> = ({ initialData, onSuccess, isModa
           const selectedDoctorForCheck = doctors.find(d => d.id === formData.doctorId);
           const { data: pendingAppointments } = await supabase
             .from('appointments')
-            .select('id, specialty_id, doctor_id')
+            .select('id, specialty_id, doctor_id').is('deleted_at', null)
             .eq('patient_id', patientId)
             .in('status', ['scheduled', 'urgent'])
             .neq('id', initialData?.id || '');

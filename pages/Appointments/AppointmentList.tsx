@@ -13,6 +13,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Appointment } from '../../types';
 import AppointmentModal from '../../components/Modals/AppointmentModal';
+import RecycleBinModal from '../../components/Modals/RecycleBinModal';
 import { copyToClipboard } from '../../utils/clipboard';
 import { openWhatsApp, processWhatsAppTemplate } from '../../utils/whatsapp';
 import { Copy, MessageCircle } from 'lucide-react';
@@ -256,7 +257,8 @@ const AppointmentList: React.FC = () => {
                     specialty:specialties!specialty_id (name),
                     creator:profiles!created_by (full_name, email),
                     treatment_plans (id, is_sus)
-                `);
+                `)
+                .is('deleted_at', null);
 
             // Apply Server-side filters
             if (activeTab === 'official') {
@@ -298,9 +300,9 @@ const AppointmentList: React.FC = () => {
                 query.limit(1000), // Increased limit
                 supabase.from('doctors').select('id, name').order('name'),
                 supabase.from('specialties').select('id, name').order('name'),
-                supabase.from('appointments').select('*', { count: 'exact', head: true }).neq('status', 'official').neq('status', 'waiting_sus').is('treatment_plan_id', null),
-                supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('status', 'official'),
-                supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('status', 'waiting_sus')
+                supabase.from('appointments').select('*', { count: 'exact', head: true }).is('deleted_at', null).neq('status', 'official').neq('status', 'waiting_sus').is('treatment_plan_id', null),
+                supabase.from('appointments').select('*', { count: 'exact', head: true }).is('deleted_at', null).eq('status', 'official'),
+                supabase.from('appointments').select('*', { count: 'exact', head: true }).is('deleted_at', null).eq('status', 'waiting_sus')
             ]);
 
             if (aptRes.error) throw aptRes.error;
@@ -475,7 +477,7 @@ const AppointmentList: React.FC = () => {
 
     const executeDelete = React.useCallback(async (id: string) => {
         try {
-            const { error } = await supabase.from('appointments').delete().eq('id', id);
+            const { error } = await supabase.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', id);
             if (error) throw error;
             setAppointments(prev => prev.filter(apt => apt.id !== id));
             setSelectedIds(prev => prev.filter(selectedId => selectedId !== id));
@@ -492,8 +494,8 @@ const AppointmentList: React.FC = () => {
         }
         setConfirmModal({
             isOpen: true,
-            title: 'Excluir Agendamento',
-            message: 'Tem certeza que deseja excluir este agendamento permanentemente?',
+            title: 'Mover para a Lixeira',
+            message: 'Tem certeza que deseja mover este agendamento para a lixeira?',
             type: 'danger',
             onConfirm: () => executeDelete(id)
         });
@@ -502,7 +504,7 @@ const AppointmentList: React.FC = () => {
     const executeBulkDelete = React.useCallback(async () => {
         setLoading(true);
         try {
-            const { error } = await supabase.from('appointments').delete().in('id', selectedIds);
+            const { error } = await supabase.from('appointments').update({ deleted_at: new Date().toISOString() }).in('id', selectedIds);
             if (error) throw error;
             setAppointments(prev => prev.filter(apt => !selectedIds.includes(apt.id)));
             addToast(`${selectedIds.length} agendamentos excluídos!`, 'success');
@@ -519,8 +521,8 @@ const AppointmentList: React.FC = () => {
         if (selectedIds.length === 0) return;
         setConfirmModal({
             isOpen: true,
-            title: 'Excluir Agendamentos',
-            message: `Você tem certeza que deseja excluir ${selectedIds.length} agendamentos? Esta ação é irreversível.`,
+            title: 'Mover para a Lixeira',
+            message: `Você tem certeza que deseja mover ${selectedIds.length} agendamentos para a lixeira?`,
             type: 'danger',
             onConfirm: executeBulkDelete
         });
@@ -633,6 +635,7 @@ const AppointmentList: React.FC = () => {
 
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
     const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
     const [selectedAppointment, setSelectedAppointment] = useState<any>(undefined);
     const [initialType, setInitialType] = useState<any>(undefined);
@@ -753,6 +756,17 @@ const AppointmentList: React.FC = () => {
                         className="bg-rose-50 text-rose-700 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest border border-rose-100 hover:bg-rose-100 transition-all flex items-center gap-2 shadow-sm"
                     >
                         PDF
+                    </button>
+
+                    <div className="h-8 w-px bg-slate-200 mx-2 hidden sm:block" />
+
+                    <button
+                        onClick={() => setIsRecycleBinOpen(true)}
+                        className="bg-slate-50 text-slate-500 hover:text-rose-600 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest border border-slate-100 hover:bg-rose-50 hover:border-rose-100 transition-all flex items-center gap-2 shadow-sm"
+                        title="Lixeira de Agendamentos"
+                    >
+                        <Trash2 size={14} />
+                        Lixeira
                     </button>
 
                     <div className="h-8 w-px bg-slate-200 mx-2 hidden sm:block" />
@@ -1191,6 +1205,12 @@ const AppointmentList: React.FC = () => {
                             navigate(returnTo, { state: { highlightId, highlightDate } });
                         }
                     }}
+                />
+
+                <RecycleBinModal
+                    isOpen={isRecycleBinOpen}
+                    onClose={() => setIsRecycleBinOpen(false)}
+                    onRestored={fetchData}
                 />
 
                 <ConfirmModal

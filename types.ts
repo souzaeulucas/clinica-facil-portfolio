@@ -122,6 +122,7 @@ export interface Appointment {
   specialty_id: string;
   notes: string;
   created_at: string;
+  deleted_at?: string | null;
   treatment_plan_id?: string;
   attendance_status?: 'scheduled' | 'attended' | 'missed' | 'justified' | 'cancelled';
   is_paid?: boolean;

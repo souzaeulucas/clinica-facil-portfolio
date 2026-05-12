@@ -67,6 +67,7 @@ const DoctorsPublicView: React.FC = () => {
             const { data: aptData, error: aptError } = await supabase
                 .from('appointments')
                 .select('doctor_id')
+                .is('deleted_at', null)
                 .neq('status', 'official');
 
             if (!aptError && aptData) {

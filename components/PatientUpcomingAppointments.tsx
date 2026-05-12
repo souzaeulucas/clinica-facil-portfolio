@@ -46,7 +46,7 @@ const PatientUpcomingAppointments: React.FC<PatientUpcomingAppointmentsProps> = 
             attendance_status,
             doctor:doctors(name),
             specialty:specialties${allowedSpecialties ? '!inner' : ''}(name)
-          `)
+          `).is('deleted_at', null)
           .eq('patient_id', patientId)
           .gte('date', startOfDay(new Date()).toISOString())
           .neq('attendance_status', 'cancelled')

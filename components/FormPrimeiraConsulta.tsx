@@ -382,7 +382,7 @@ const FormPrimeiraConsulta: React.FC<FormPrimeiraConsultaProps> = ({ initialData
       const appointmentsPromises = validRows.map(async (row) => {
         const { data: pendingAppointments } = await supabase
           .from('appointments')
-          .select('id, specialty_id, doctor_id')
+          .select('id, specialty_id, doctor_id').is('deleted_at', null)
           .eq('patient_id', patientId)
           .in('status', ['scheduled', 'urgent'])
           .neq('id', initialData?.id || '');

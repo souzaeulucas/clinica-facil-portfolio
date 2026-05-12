@@ -148,7 +148,7 @@ const AdminDashboard: React.FC = () => {
                     doctors (id, name, spec:specialties (name)),
                     specialty:specialties!specialty_id (id, name),
                     treatment_plans (is_sus)
-                `);
+                `).is('deleted_at', null);
 
             if (error) throw error;
             const formatted: DashboardAppointment[] = (data || []).map((item: any) => ({
