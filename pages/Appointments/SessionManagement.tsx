@@ -437,7 +437,8 @@ const SessionManagement: React.FC = () => {
 
     const uniqueDoctors = useMemo(() => {
         return allDoctors.filter(doc => {
-            const specName = doc.spec?.name;
+            const spec = Array.isArray(doc.spec) ? doc.spec[0] : doc.spec;
+            const specName = spec?.name;
             return specName && ALLOWED_TREATMENT_SPECIALTIES.includes(specName);
         });
     }, [allDoctors]);
