@@ -422,10 +422,16 @@ const SessionManagement: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('doctors')
-                .select('*, spec:specialties(name)').is('deleted_at', null)
+                .select('id, name, specialty_id, specialties(name)')
                 .order('name');
             if (error) throw error;
-            setAllDoctors(data as any || []);
+            
+            const normalizedData = (data || []).map((doc: any) => ({
+                ...doc,
+                spec: Array.isArray(doc.specialties) ? doc.specialties[0] : doc.specialties
+            }));
+            
+            setAllDoctors(normalizedData as any);
         } catch (e) {
             console.error('Error fetching doctors:', e);
         }
@@ -437,8 +443,7 @@ const SessionManagement: React.FC = () => {
 
     const uniqueDoctors = useMemo(() => {
         return allDoctors.filter(doc => {
-            const spec = Array.isArray(doc.spec) ? doc.spec[0] : doc.spec;
-            const specName = spec?.name;
+            const specName = doc.spec?.name;
             return specName && ALLOWED_TREATMENT_SPECIALTIES.includes(specName);
         });
     }, [allDoctors]);
