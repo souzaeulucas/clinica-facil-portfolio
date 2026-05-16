@@ -1,3 +1,9 @@
+/**
+ * @component SessionManagement
+ * @description Módulo de Gestão de Planos de Tratamento e Sessões Financeiras.
+ * Possui lógica integrada para cálculo de sessões autorizadas, consumo de saldo
+ * e limpeza automática de agendamentos órfãos ou excedentes.
+ */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
@@ -431,11 +437,8 @@ const SessionManagement: React.FC = () => {
 
     const uniqueDoctors = useMemo(() => {
         return allDoctors.filter(doc => {
-            const name = doc.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-            return name.includes('FILIPE ANTONIO') ||
-                name.includes('PATRICIA DE OLIVEIRA') ||
-                name.includes('GABRIEL AUGUSTO') ||
-                name.includes('GLAUCIA REGINA');
+            const specName = doc.spec?.name;
+            return specName && ALLOWED_TREATMENT_SPECIALTIES.includes(specName);
         });
     }, [allDoctors]);
 
