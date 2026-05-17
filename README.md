@@ -50,6 +50,15 @@ Sistema completo de gestão hospitalar focado em substituir fluxos manuais por a
 
 ---
 
+## 🛠️ Instalação Local (Ambiente de Teste)
+Para rodar este projeto em sua máquina, o código está configurado para se conectar a um banco de dados Supabase de demonstração (dados fictícios), garantindo a proteção da regra de negócio original.
+
+1. Clone o repositório: `git clone https://github.com/souzaeulucas/clinica-facil-portfolio.git`
+2. Instale as dependências: `npm install`
+3. Rode o servidor: `npm run dev`
+
+---
+
 ## 👨‍💻 Autor
 **Lucas Souza**
 - Desenvolvedor com foco em soluções Fullstack e Arquitetura de Sistemas.
